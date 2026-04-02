@@ -1,32 +1,37 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter/foundation.dart'; // ← add this
+
 import '../models/user_model.dart';
+
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  // ── Get current user ────────────────────────────────────────────────────────
   User? get currentUser => _auth.currentUser;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // ── Get user role from Firestore ────────────────────────────────────────────
-  Future<String?> getUserRole(String uid) async {
+  Future<UserModel?> getUserProfile(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
-      if (doc.exists) {
-        return doc.data()?['role'] as String?;
+      if (!doc.exists || doc.data() == null) {
+        return null;
       }
-      return null;
-    } catch (e) {
-      return null;
+      return UserModel.fromMap(doc.data()!, uid);
+    } on FirebaseException catch (e) {
+      debugPrint('Failed to load profile for $uid: ${e.message}');
+      throw Exception('Unable to load your profile. Please try again.');
     }
   }
 
-  // ── Admin Login (email + password only) ─────────────────────────────────────
+  Future<String?> getUserRole(String uid) async {
+    final profile = await getUserProfile(uid);
+    return profile?.role;
+  }
+
   Future<UserModel?> adminLogin({
     required String email,
     required String password,
@@ -38,22 +43,23 @@ class AuthService {
       );
 
       final uid = credential.user!.uid;
-      final role = await getUserRole(uid);
+      final profile = await getUserProfile(uid);
+      if (profile == null) {
+        await _auth.signOut();
+        throw Exception('Profile not found. Please sign in again.');
+      }
 
-      // Make sure this user is actually an admin
-      if (role != 'admin') {
+      if (profile.role != 'admin') {
         await _auth.signOut();
         throw Exception('Access denied. Not an admin account.');
       }
 
-      final doc = await _firestore.collection('users').doc(uid).get();
-      return UserModel.fromMap(doc.data()!, uid);
+      return profile;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
     }
   }
 
-  // ── Student Login (email + password) ────────────────────────────────────────
   Future<UserModel?> studentLogin({
     required String email,
     required String password,
@@ -65,21 +71,23 @@ class AuthService {
       );
 
       final uid = credential.user!.uid;
-      final role = await getUserRole(uid);
+      final profile = await getUserProfile(uid);
+      if (profile == null) {
+        await _auth.signOut();
+        throw Exception('Profile not found. Please sign in again.');
+      }
 
-      if (role == 'admin') {
+      if (profile.role == 'admin') {
         await _auth.signOut();
         throw Exception('Please use the Admin login instead.');
       }
 
-      final doc = await _firestore.collection('users').doc(uid).get();
-      return UserModel.fromMap(doc.data()!, uid);
+      return profile;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
     }
   }
 
-  // ── Student Register (email + password) ─────────────────────────────────────
   Future<UserModel?> studentRegister({
     required String name,
     required String studentId,
@@ -94,11 +102,8 @@ class AuthService {
       );
 
       final user = credential.user!;
-
-      // Update display name
       await user.updateDisplayName(name);
 
-      // Save to Firestore
       final userModel = UserModel(
         uid: user.uid,
         email: email.trim(),
@@ -108,22 +113,17 @@ class AuthService {
         department: department,
       );
 
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .set(userModel.toMap());
-
+      await _firestore.collection('users').doc(user.uid).set(userModel.toMap());
       return userModel;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
     }
   }
 
-  // ── Google Sign-In (students only) ──────────────────────────────────────────
   Future<UserModel?> signInWithGoogle() async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return null; // User cancelled
+      if (googleUser == null) return null;
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
@@ -136,11 +136,10 @@ class AuthService {
       final userCredential = await _auth.signInWithCredential(credential);
       final user = userCredential.user!;
 
-      // Check if user already exists in Firestore
       final doc = await _firestore.collection('users').doc(user.uid).get();
+      final data = doc.data();
 
-      if (!doc.exists) {
-        // New user — save to Firestore as student
+      if (data == null || !doc.exists) {
         final userModel = UserModel(
           uid: user.uid,
           email: user.email ?? '',
@@ -153,28 +152,68 @@ class AuthService {
             .doc(user.uid)
             .set(userModel.toMap());
         return userModel;
-      } else {
-        // Existing user
-        final role = doc.data()?['role'];
-        if (role == 'admin') {
-          await _auth.signOut();
-          await _googleSignIn.signOut();
-          throw Exception('Admin accounts cannot use Google Sign-In.');
-        }
-        return UserModel.fromMap(doc.data()!, user.uid);
       }
+
+      final role = data['role'];
+      if (role == 'admin') {
+        await _auth.signOut();
+        await _googleSignIn.signOut();
+        throw Exception('Admin accounts cannot use Google Sign-In.');
+      }
+
+      return UserModel.fromMap(data, user.uid);
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
+    } on FirebaseException catch (e) {
+      debugPrint('Google sign-in Firestore error: ${e.message}');
+      throw Exception('Unable to load your Google profile. Please try again.');
     }
   }
 
-  // ── Sign Out ─────────────────────────────────────────────────────────────────
+  Future<UserModel> completeGoogleStudentProfile({
+    required String uid,
+    required String name,
+    required String studentId,
+    required String department,
+  }) async {
+    try {
+      final currentUser = _auth.currentUser;
+      final doc = await _firestore.collection('users').doc(uid).get();
+      final data = doc.data() ?? <String, dynamic>{};
+
+      final userModel = UserModel(
+        uid: uid,
+        email: data['email'] as String? ?? currentUser?.email ?? '',
+        role: data['role'] as String? ?? 'student',
+        name: name.trim(),
+        studentId: studentId.trim(),
+        department: department.trim(),
+        photoUrl: data['photoUrl'] as String? ?? currentUser?.photoURL,
+      );
+
+      await _firestore.collection('users').doc(uid).set({
+        'uid': userModel.uid,
+        'email': userModel.email,
+        'role': userModel.role,
+        'name': userModel.name,
+        'studentId': userModel.studentId,
+        'department': userModel.department,
+        'photoUrl': userModel.photoUrl,
+      }, SetOptions(merge: true));
+
+      await currentUser?.updateDisplayName(name.trim());
+      return userModel;
+    } on FirebaseException catch (e) {
+      debugPrint('Failed to complete Google profile for $uid: ${e.message}');
+      throw Exception('Unable to save your profile. Please try again.');
+    }
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
   }
 
-  // ── Password Reset ───────────────────────────────────────────────────────────
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());
@@ -183,11 +222,8 @@ class AuthService {
     }
   }
 
-  // ── Firebase error messages ──────────────────────────────────────────────────
   String _firebaseErrorMessage(String code) {
     switch (code) {
-      // ✅ FIXED: Modern Firebase SDK uses 'invalid-credential' instead of
-      // 'wrong-password' or 'user-not-found' for security reasons.
       case 'invalid-credential':
         return 'Incorrect email or password. Please try again.';
       case 'user-not-found':
@@ -206,8 +242,6 @@ class AuthService {
         return 'Too many attempts. Please try again later.';
       case 'network-request-failed':
         return 'Network error. Check your connection.';
-      // ✅ FIXED: Catches any other unhandled codes with the actual code
-      // in debug output so you can identify new cases easily.
       default:
         debugPrint('Unhandled FirebaseAuthException code: $code');
         return 'Something went wrong. Please try again.';

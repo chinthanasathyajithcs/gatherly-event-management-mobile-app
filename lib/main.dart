@@ -3,7 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'screens/auth/role_select_screen.dart';
+import 'models/user_model.dart';
+import 'screens/auth/auth_shell_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/student/student_dashboard_screen.dart';
 import 'services/auth_service.dart';
@@ -33,7 +34,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'UniEvents',
+      title: 'UniHub',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFC4A052)),
@@ -66,14 +67,14 @@ class AuthWrapper extends StatelessWidget {
 
         // Not logged in
         if (!snapshot.hasData || snapshot.data == null) {
-          return const RoleSelectScreen();
+          return const AuthShellScreen();
         }
 
         // Logged in — check role from Firestore
-        return FutureBuilder<String?>(
-          future: AuthService().getUserRole(snapshot.data!.uid),
-          builder: (context, roleSnap) {
-            if (roleSnap.connectionState == ConnectionState.waiting) {
+        return FutureBuilder<UserModel?>(
+          future: AuthService().getUserProfile(snapshot.data!.uid),
+          builder: (context, profileSnap) {
+            if (profileSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 backgroundColor: Color(0xFF0D1B2E),
                 body: Center(
@@ -82,12 +83,15 @@ class AuthWrapper extends StatelessWidget {
               );
             }
 
-            final role = roleSnap.data;
+            final profile = profileSnap.data;
+            if (profile == null) return const AuthShellScreen();
+
+            final role = profile.role;
             if (role == 'admin') return const AdminDashboardScreen();
             if (role == 'student') return const StudentDashboardScreen();
 
-            // Unknown role — back to select
-            return const RoleSelectScreen();
+            // Unknown role — back to auth shell
+            return const AuthShellScreen();
           },
         );
       },

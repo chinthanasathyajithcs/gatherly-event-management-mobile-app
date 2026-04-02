@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
-import '../auth/role_select_screen.dart';
+import '../auth/auth_shell_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -19,7 +19,7 @@ class AdminDashboardScreen extends StatelessWidget {
           children: [
             Icon(Icons.school_rounded, color: Color(0xFFC4A052), size: 22),
             SizedBox(width: 8),
-            Text('UniEvents',
+            Text('UniHub',
                 style: TextStyle(
                     color: Color(0xFFF0EADC),
                     fontSize: 17,
@@ -49,13 +49,14 @@ class AdminDashboardScreen extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.logout_rounded, color: Color(0xFF8A9AB5), size: 20),
+            icon: const Icon(Icons.logout_rounded,
+                color: Color(0xFF8A9AB5), size: 20),
             onPressed: () async {
               await AuthService().signOut();
               if (!context.mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
-                MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+                MaterialPageRoute(builder: (_) => const AuthShellScreen()),
                 (_) => false,
               );
             },
@@ -120,11 +121,18 @@ class AdminDashboardScreen extends StatelessWidget {
             // Stats row
             const Row(
               children: [
-                _StatCard(icon: Icons.event_rounded, label: 'Events', value: '12'),
+                _StatCard(
+                    icon: Icons.event_rounded, label: 'Events', value: '12'),
                 SizedBox(width: 12),
-                _StatCard(icon: Icons.people_rounded, label: 'Students', value: '248'),
+                _StatCard(
+                    icon: Icons.people_rounded,
+                    label: 'Students',
+                    value: '248'),
                 SizedBox(width: 12),
-                _StatCard(icon: Icons.how_to_reg_rounded, label: 'Registrations', value: '531'),
+                _StatCard(
+                    icon: Icons.how_to_reg_rounded,
+                    label: 'Registrations',
+                    value: '531'),
               ],
             ),
 
@@ -181,7 +189,8 @@ class _StatCard extends StatelessWidget {
   final String label;
   final String value;
 
-  const _StatCard({required this.icon, required this.label, required this.value});
+  const _StatCard(
+      {required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -205,7 +214,9 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(label,
                 style: const TextStyle(
-                    color: Color(0xFF8A9AB5), fontSize: 10, fontWeight: FontWeight.w500)),
+                    color: Color(0xFF8A9AB5),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -268,7 +279,8 @@ class _ActionCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF8A9AB5), size: 18),
+            const Icon(Icons.chevron_right_rounded,
+                color: Color(0xFF8A9AB5), size: 18),
           ],
         ),
       ),

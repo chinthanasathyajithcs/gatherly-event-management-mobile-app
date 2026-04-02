@@ -43,4 +43,9 @@ class UserModel {
       'createdAt': DateTime.now().toIso8601String(),
     };
   }
+
+  bool get isProfileComplete {
+    return (studentId?.trim().isNotEmpty ?? false) &&
+        (department?.trim().isNotEmpty ?? false);
+  }
 }
