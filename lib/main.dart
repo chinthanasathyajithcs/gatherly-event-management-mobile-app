@@ -57,12 +57,7 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         // Still loading
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF0D1B2E),
-            body: Center(
-              child: CircularProgressIndicator(color: Color(0xFFC4A052)),
-            ),
-          );
+          return const _AppLoadingScreen();
         }
 
         // Not logged in
@@ -75,12 +70,7 @@ class AuthWrapper extends StatelessWidget {
           future: AuthService().getUserProfile(snapshot.data!.uid),
           builder: (context, profileSnap) {
             if (profileSnap.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                backgroundColor: Color(0xFF0D1B2E),
-                body: Center(
-                  child: CircularProgressIndicator(color: Color(0xFFC4A052)),
-                ),
-              );
+              return const _AppLoadingScreen();
             }
 
             final profile = profileSnap.data;
@@ -95,6 +85,71 @@ class AuthWrapper extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+class _AppLoadingScreen extends StatelessWidget {
+  const _AppLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF6F1EB),
+      body: Center(
+        child: Container(
+          width: 250,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x120D1B2E),
+                blurRadius: 20,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(
+                Icons.auto_awesome,
+                color: Color(0xFFCB6D22),
+                size: 30,
+              ),
+              SizedBox(height: 12),
+              Text(
+                'UniHub',
+                style: TextStyle(
+                  color: Color(0xFF0D1B2E),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Getting things ready...',
+                style: TextStyle(
+                  color: Color(0xFF66778A),
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              SizedBox(height: 16),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.8,
+                  color: Color(0xFFCB6D22),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

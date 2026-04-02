@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../student/student_dashboard_screen.dart';
 import 'admin_login_screen.dart';
-import 'widgets/auth_forms.dart';
+import 'google_profile_completion_screen.dart';
+import 'auth_forms.dart';
 
 class AuthShellScreen extends StatefulWidget {
   const AuthShellScreen({super.key});
@@ -174,11 +175,23 @@ class _AuthShellScreenState extends State<AuthShellScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
-        (_) => false,
-      );
+
+      // Check if profile is complete, otherwise navigate to completion screen
+      if (!user.isProfileComplete) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GoogleProfileCompletionScreen(profile: user),
+          ),
+          (_) => false,
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
+          (_) => false,
+        );
+      }
     } catch (e) {
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
