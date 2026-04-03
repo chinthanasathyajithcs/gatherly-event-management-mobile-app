@@ -63,6 +63,9 @@ Rules:
 - Never invent app features not given.
 - For create_event, extract only what is reasonably clear.
 - Do not force fields; use null when unknown.
+- If user gives a custom category not in the allowed categories, keep it in "category".
+- Also suggest the closest allowed category in "suggestedCategory" when possible.
+- If user mentions an image/poster URL, put it in "posterImageUrl".
 
 Current builder step: $step
 Allowed categories: ${jsonEncode(categories)}
@@ -76,13 +79,15 @@ Return JSON in this exact shape:
   "confidence": 0.0,
   "extracted": {
     "category": "string|null",
+    "suggestedCategory": "string|null",
     "name": "string|null",
     "date": "YYYY-MM-DD|null",
     "time": "HH:mm|null",
     "location": "string|null",
     "hasParticipantLimit": true,
     "attendeeCount": 0,
-    "description": "string|null"
+    "description": "string|null",
+    "posterImageUrl": "string|null"
   }
 }
 

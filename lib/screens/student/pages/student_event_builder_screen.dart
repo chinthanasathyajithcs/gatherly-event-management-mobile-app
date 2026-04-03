@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../models/event_model.dart';
 import '../../../services/event_service.dart';
@@ -29,6 +31,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   final EventService _eventService = EventService();
   final GeminiEventAssistantService _geminiService =
       GeminiEventAssistantService();
+  final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -39,6 +42,14 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     'Conference',
     'Festival',
     'Meetup',
+    'Webinar',
+    'Competition',
+    'Career Fair',
+    'Networking',
+    'Sports',
+    'Cultural',
+    'Orientation',
+    'Volunteering',
   ];
 
   final List<_ChatMessage> _messages = [];
@@ -53,8 +64,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   bool _participantModeChosen = false;
   int? _attendees;
   String? _description;
+  String? _posterImageUrl;
   bool _saving = false;
   bool _thinking = false;
+  bool _uploadingPoster = false;
+
+  static const int _builderStepsCount = 8;
 
   @override
   void initState() {
@@ -144,6 +159,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     if (input.isEmpty) return;
 
     _inputController.clear();
+    _addUser(input);
 
     EventAssistantTurnResult? aiResult;
     if (_geminiService.isAvailable) {
@@ -166,7 +182,6 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         (aiResult.intent == EventAssistantIntent.outOfScope ||
             aiResult.intent == EventAssistantIntent.unsafe ||
             aiResult.intent == EventAssistantIntent.appHelp)) {
-      _addUser(input);
       _addAssistant(
         aiResult.assistantReply.isNotEmpty
             ? aiResult.assistantReply
@@ -177,22 +192,24 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
 
     final extracted = aiResult?.extracted ?? const <String, dynamic>{};
     final aiCategory = _extractString(extracted['category']);
+    final aiSuggestedCategory = _extractString(extracted['suggestedCategory']);
     final aiName = _extractString(extracted['name']);
     final aiDate = _extractString(extracted['date']);
     final aiTime = _extractString(extracted['time']);
     final aiLocation = _extractString(extracted['location']);
     final aiDescription = _extractString(extracted['description']);
+    final aiPosterImageUrl = _extractString(extracted['posterImageUrl']);
     final aiHasLimit = _extractBool(extracted['hasParticipantLimit']);
     final aiAttendeeCount = _extractInt(extracted['attendeeCount']);
 
     if (_tryPlannerAdvanceFromAi(
-      rawInput: input,
       aiCategory: aiCategory,
       aiName: aiName,
       aiDate: aiDate,
       aiTime: aiTime,
       aiLocation: aiLocation,
       aiDescription: aiDescription,
+      aiPosterImageUrl: aiPosterImageUrl,
       aiHasLimit: aiHasLimit,
       aiAttendeeCount: aiAttendeeCount,
       confidence: aiResult?.confidence,
@@ -204,24 +221,38 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       case _EventBuilderStep.category:
         final matchedCategory =
             _matchCategory(input) ?? _matchCategory(aiCategory);
-        if (matchedCategory == null) {
-          _addAssistant('Select a category from the chips above to continue.');
+        final customCategory = _sanitizeCustomCategory(aiCategory ?? input);
+        final resolvedCategory = matchedCategory ?? customCategory;
+
+        if (resolvedCategory == null) {
+          _addAssistant(
+              'Please type a category (you can write your own) or pick one from the chips.');
           return;
         }
-        _category = matchedCategory;
-        _addUser(matchedCategory);
+
+        _category = resolvedCategory;
+        final suggestedCategory = _matchCategory(aiSuggestedCategory) ??
+            _suggestKnownCategory(input) ??
+            _suggestKnownCategory(aiCategory);
+
         _step = _EventBuilderStep.name;
-        _addAssistant('Great choice. What is the event name?');
+        if (suggestedCategory != null &&
+            suggestedCategory.toLowerCase() != resolvedCategory.toLowerCase()) {
+          _addAssistant(
+            'Nice category: "$resolvedCategory". Suggested standard category: "$suggestedCategory". You can tap the chip to switch, or keep your custom one.\n\nWhat is the event name?',
+          );
+        } else {
+          _addAssistant('Great choice. What is the event name?');
+        }
         break;
       case _EventBuilderStep.name:
         final candidateName =
             (aiName != null && aiName.length >= 3) ? aiName : input;
-        if (candidateName.length < 3) {
-          _addAssistant('Event name should be at least 3 characters.');
+        if (candidateName.length < 2) {
+          _addAssistant('Event name is too short. Add at least 2 characters.');
           return;
         }
         _name = candidateName;
-        _addUser(candidateName);
         _step = _EventBuilderStep.date;
         _addAssistant(
             'What is the event date? (Example: 2026-04-15 or 15/04/2026)');
@@ -230,36 +261,35 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         final parsedDate =
             _parseDate(input) ?? (aiDate == null ? null : _parseDate(aiDate));
         if (parsedDate == null) {
-          _addAssistant('Please enter a valid date. Example: 2026-04-15.');
+          _addAssistant(
+              'Please enter a valid date. Example: 2026-04-15, 15/04/2026, or tomorrow.');
           return;
         }
         _date = parsedDate;
-        _addUser(_formatDate(parsedDate));
         _step = _EventBuilderStep.time;
-        _addAssistant('What is the start time? (Example: 14:30 or 2:30 PM)');
+        _addAssistant(
+            'What is the start time? (Example: 14:30, 2:30 PM, or 2pm)');
         break;
       case _EventBuilderStep.time:
         final parsedTime =
             _parseTime(input) ?? (aiTime == null ? null : _parseTime(aiTime));
         if (parsedTime == null) {
           _addAssistant(
-              'Please enter a valid time. Example: 14:30 or 2:30 PM.');
+              'Please enter a valid time. Example: 14:30, 2:30 PM, or 2pm.');
           return;
         }
         _time = parsedTime;
-        _addUser(_formatTime(parsedTime));
         _step = _EventBuilderStep.location;
         _addAssistant('Where is the event location?');
         break;
       case _EventBuilderStep.location:
         final candidateLocation =
             (aiLocation != null && aiLocation.length >= 3) ? aiLocation : input;
-        if (candidateLocation.length < 3) {
+        if (candidateLocation.length < 2) {
           _addAssistant('Location looks too short. Please add a proper venue.');
           return;
         }
         _location = candidateLocation;
-        _addUser(candidateLocation);
         _step = _EventBuilderStep.participantMode;
         _addAssistant(
           'Should this event track participant count? Reply yes or no.',
@@ -269,11 +299,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         final normalized = input.toLowerCase();
         final yesValues = {'yes', 'y', 'track', 'required'};
         final noValues = {'no', 'n', 'skip', 'not needed', 'optional'};
+        final hasYesSignal = yesValues.any(normalized.contains);
+        final hasNoSignal = noValues.any(normalized.contains);
 
         if (aiHasLimit != null) {
           _hasParticipantLimit = aiHasLimit;
           _participantModeChosen = true;
-          _addUser(input);
           if (aiHasLimit) {
             _step = _EventBuilderStep.attendees;
             _addAssistant('How many attendees are expected?');
@@ -285,20 +316,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           return;
         }
 
-        if (yesValues.contains(normalized)) {
+        if (hasYesSignal) {
           _hasParticipantLimit = true;
           _participantModeChosen = true;
-          _addUser(input);
           _step = _EventBuilderStep.attendees;
           _addAssistant('How many attendees are expected?');
           return;
         }
 
-        if (noValues.contains(normalized)) {
+        if (hasNoSignal) {
           _hasParticipantLimit = false;
           _participantModeChosen = true;
           _attendees = null;
-          _addUser(input);
           _step = _EventBuilderStep.description;
           _addAssistant('Got it. Add a short event description or theme.');
           return;
@@ -307,28 +336,28 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         _addAssistant('Please answer with yes or no.');
         break;
       case _EventBuilderStep.attendees:
-        final count = int.tryParse(input) ?? aiAttendeeCount;
+        final extractedCount = RegExp(r'\d+').firstMatch(input)?.group(0);
+        final count = int.tryParse(extractedCount ?? '') ?? aiAttendeeCount;
         if (count == null || count <= 0) {
           _addAssistant(
               'Please provide a valid attendee count (numbers only).');
           return;
         }
         _attendees = count;
-        _addUser(count.toString());
         _step = _EventBuilderStep.description;
         _addAssistant('Add a short event description or theme.');
         break;
       case _EventBuilderStep.description:
         final candidateDescription =
-            (aiDescription != null && aiDescription.length >= 10)
+            (aiDescription != null && aiDescription.length >= 8)
                 ? aiDescription
                 : input;
-        if (candidateDescription.length < 10) {
-          _addAssistant('Description should be at least 10 characters.');
+        if (candidateDescription.length < 8) {
+          _addAssistant(
+              'Description is a bit short. Add at least 8 characters.');
           return;
         }
         _description = candidateDescription;
-        _addUser(candidateDescription);
         _step = _EventBuilderStep.review;
         _addAssistant('Perfect. Review the event details below and save.');
         break;
@@ -351,17 +380,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       'participantModeChosen': _participantModeChosen,
       'attendeeCount': _attendees,
       'description': _description,
+      'posterImageUrl': _posterImageUrl,
     };
   }
 
   bool _tryPlannerAdvanceFromAi({
-    required String rawInput,
     required String? aiCategory,
     required String? aiName,
     required String? aiDate,
     required String? aiTime,
     required String? aiLocation,
     required String? aiDescription,
+    required String? aiPosterImageUrl,
     required bool? aiHasLimit,
     required int? aiAttendeeCount,
     required double? confidence,
@@ -423,10 +453,17 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       changed = true;
     }
 
+    if (_posterImageUrl == null && aiPosterImageUrl != null) {
+      final normalized = _normalizePosterUrl(aiPosterImageUrl);
+      if (normalized != null) {
+        _posterImageUrl = normalized;
+        changed = true;
+      }
+    }
+
     final shouldAdvance = changed && (confidence ?? 0) >= 0.55;
     if (!shouldAdvance) return false;
 
-    _addUser(rawInput);
     _step = _firstMissingStep();
 
     if (_step == _EventBuilderStep.review) {
@@ -455,13 +492,13 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   String _nextPromptForStep(_EventBuilderStep step) {
     switch (step) {
       case _EventBuilderStep.category:
-        return 'Pick an event category from the chips above.';
+        return 'Pick an event category from the chips, or type your own category.';
       case _EventBuilderStep.name:
         return 'What is the event name?';
       case _EventBuilderStep.date:
         return 'What is the event date? (Example: 2026-04-15 or 15/04/2026)';
       case _EventBuilderStep.time:
-        return 'What is the start time? (Example: 14:30 or 2:30 PM)';
+        return 'What is the start time? (Example: 14:30, 2:30 PM, or 2pm)';
       case _EventBuilderStep.location:
         return 'Where is the event location?';
       case _EventBuilderStep.participantMode:
@@ -509,6 +546,161 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     return null;
   }
 
+  String? _sanitizeCustomCategory(String? raw) {
+    if (raw == null) return null;
+    final value = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (value.length < 2) return null;
+    return _toTitleCase(value);
+  }
+
+  String? _suggestKnownCategory(String? raw) {
+    if (raw == null) return null;
+    final normalized = raw.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    for (final category in _categories) {
+      final categoryLower = category.toLowerCase();
+      if (normalized.contains(categoryLower) ||
+          categoryLower.contains(normalized)) {
+        return category;
+      }
+    }
+
+    if (normalized.contains('code') ||
+        normalized.contains('build') ||
+        normalized.contains('prototype')) {
+      return 'Hackathon';
+    }
+    if (normalized.contains('training') ||
+        normalized.contains('hands-on') ||
+        normalized.contains('bootcamp')) {
+      return 'Workshop';
+    }
+    if (normalized.contains('talk') || normalized.contains('speaker')) {
+      return 'Seminar';
+    }
+    if (normalized.contains('virtual') || normalized.contains('online')) {
+      return 'Webinar';
+    }
+    if (normalized.contains('job') || normalized.contains('career')) {
+      return 'Career Fair';
+    }
+    if (normalized.contains('network')) {
+      return 'Networking';
+    }
+    if (normalized.contains('sport') || normalized.contains('tournament')) {
+      return 'Sports';
+    }
+    if (normalized.contains('culture') || normalized.contains('dance')) {
+      return 'Cultural';
+    }
+
+    return null;
+  }
+
+  String _toTitleCase(String value) {
+    final words = value.split(' ');
+    return words.map((word) {
+      if (word.isEmpty) return word;
+      final first = word.substring(0, 1).toUpperCase();
+      final rest = word.substring(1).toLowerCase();
+      return '$first$rest';
+    }).join(' ');
+  }
+
+  String? _normalizePosterUrl(String? raw) {
+    if (raw == null) return null;
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null || !uri.hasScheme) return null;
+    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+    return value;
+  }
+
+  Future<String?> _pickAndUploadPoster() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please sign in first to upload an event poster.'),
+          ),
+        );
+      }
+      return null;
+    }
+
+    try {
+      setState(() => _uploadingPoster = true);
+
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1800,
+        imageQuality: 85,
+      );
+      if (picked == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No image selected from gallery.')),
+          );
+        }
+        return null;
+      }
+
+      final bytes = await picked.readAsBytes();
+      final fileName =
+          'poster_${DateTime.now().millisecondsSinceEpoch.toString()}.jpg';
+      final app = FirebaseAuth.instance.app;
+      final bucket = app.options.storageBucket;
+      final fallbackBucket = (bucket != null && bucket.isNotEmpty)
+          ? bucket
+          : '${app.options.projectId}.firebasestorage.app';
+      final storage = FirebaseStorage.instanceFor(bucket: fallbackBucket);
+
+      final ref = storage.ref().child('event_posters/${user.uid}/$fileName');
+
+      await ref.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      final url = await ref.getDownloadURL();
+
+      if (mounted) {
+        setState(() => _posterImageUrl = url);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Poster uploaded successfully.')),
+        );
+      }
+      _addAssistant(
+          'Poster uploaded successfully. I attached it to the event.');
+      return url;
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        final msg = switch (e.code) {
+          'unauthorized' =>
+            'Upload blocked by Firebase Storage rules. Please allow authenticated uploads.',
+          'object-not-found' =>
+            'Storage bucket not found. Please verify Firebase Storage is configured.',
+          _ => 'Poster upload failed: ${e.message ?? e.code}',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
+      return null;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Poster upload failed: $e')),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _uploadingPoster = false);
+    }
+  }
+
   Future<void> _saveEvent() async {
     if (_saving) return;
 
@@ -545,6 +737,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         hasParticipantLimit: hasParticipantLimit,
         attendeeCount: hasParticipantLimit ? _attendees : null,
         description: _description!,
+        posterImageUrl: _normalizePosterUrl(_posterImageUrl),
       );
       await _eventService.createEvent(event);
 
@@ -573,6 +766,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       _participantModeChosen = false;
       _attendees = null;
       _description = null;
+      _posterImageUrl = null;
       _step = _EventBuilderStep.category;
     });
     _addAssistant('Let us build a new event. First, pick a category.');
@@ -584,6 +778,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     final attendeesCtrl =
         TextEditingController(text: (_attendees ?? '').toString());
     final descriptionCtrl = TextEditingController(text: _description ?? '');
+    final posterCtrl = TextEditingController(text: _posterImageUrl ?? '');
 
     String tempCategory = _category ?? _categories.first;
     DateTime tempDate = _date ?? DateTime.now();
@@ -702,6 +897,44 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                       decoration:
                           const InputDecoration(labelText: 'Description'),
                     ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: posterCtrl,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Poster image URL (optional)',
+                        hintText: 'https://example.com/event-poster.jpg',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _uploadingPoster
+                            ? null
+                            : () async {
+                                final uploadedUrl =
+                                    await _pickAndUploadPoster();
+                                if (uploadedUrl == null) return;
+                                setModalState(() {
+                                  posterCtrl.text = uploadedUrl;
+                                });
+                              },
+                        icon: _uploadingPoster
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.photo_library_outlined),
+                        label: Text(
+                          _uploadingPoster
+                              ? 'Uploading from gallery...'
+                              : 'Upload from gallery',
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -735,6 +968,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                             _attendees =
                                 tempHasParticipantLimit ? attendees : null;
                             _description = descriptionCtrl.text.trim();
+                            _posterImageUrl =
+                                _normalizePosterUrl(posterCtrl.text.trim());
                             _step = _EventBuilderStep.review;
                           });
                           Navigator.pop(context);
@@ -764,6 +999,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
 
     final iso = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
     final dmy = RegExp(r'^(\d{1,2})\/(\d{1,2})\/(\d{4})$');
+    final dmyDash = RegExp(r'^(\d{1,2})-(\d{1,2})-(\d{4})$');
 
     if (iso.hasMatch(value)) {
       final m = iso.firstMatch(value)!;
@@ -781,6 +1017,19 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       return DateTime.tryParse('$y-${_two(mo)}-${_two(d)}');
     }
 
+    if (dmyDash.hasMatch(value)) {
+      final m = dmyDash.firstMatch(value)!;
+      final d = int.parse(m.group(1)!);
+      final mo = int.parse(m.group(2)!);
+      final y = int.parse(m.group(3)!);
+      return DateTime.tryParse('$y-${_two(mo)}-${_two(d)}');
+    }
+
+    final parsed = DateTime.tryParse(input.trim());
+    if (parsed != null) {
+      return DateTime(parsed.year, parsed.month, parsed.day);
+    }
+
     return null;
   }
 
@@ -788,7 +1037,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     final value = input.trim().toLowerCase();
     final re = RegExp(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$');
     final match = re.firstMatch(value);
-    if (match == null) return null;
+    if (match == null) {
+      final shortRe = RegExp(r'^(\d{1,2})\s*(am|pm)$');
+      final shortMatch = shortRe.firstMatch(value);
+      if (shortMatch == null) return null;
+
+      var hour = int.parse(shortMatch.group(1)!);
+      if (hour < 1 || hour > 12) return null;
+      final meridiem = shortMatch.group(2);
+      if (meridiem == 'pm' && hour != 12) hour += 12;
+      if (meridiem == 'am' && hour == 12) hour = 0;
+      return TimeOfDay(hour: hour, minute: 0);
+    }
 
     int hour = int.parse(match.group(1)!);
     final minute = int.parse(match.group(2)!);
@@ -819,9 +1079,47 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     return '${_two(hour12)}:${_two(time.minute)} $period';
   }
 
+  int _completedStepCount() {
+    var count = 0;
+    if (_category != null) count++;
+    if (_name != null) count++;
+    if (_date != null) count++;
+    if (_time != null) count++;
+    if (_location != null) count++;
+    if (_participantModeChosen) count++;
+    if (!_hasParticipantLimit || _attendees != null) count++;
+    if (_description != null) count++;
+    return count;
+  }
+
+  String _stepLabel(_EventBuilderStep step) {
+    switch (step) {
+      case _EventBuilderStep.category:
+        return 'Category';
+      case _EventBuilderStep.name:
+        return 'Name';
+      case _EventBuilderStep.date:
+        return 'Date';
+      case _EventBuilderStep.time:
+        return 'Time';
+      case _EventBuilderStep.location:
+        return 'Location';
+      case _EventBuilderStep.participantMode:
+        return 'Participant Mode';
+      case _EventBuilderStep.attendees:
+        return 'Attendees';
+      case _EventBuilderStep.description:
+        return 'Description';
+      case _EventBuilderStep.review:
+        return 'Review';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isReview = _step == _EventBuilderStep.review;
+    final completed = _completedStepCount();
+    final progress = (completed / _builderStepsCount).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F1EB),
@@ -857,10 +1155,10 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     ),
                   ],
                 ),
-                child: const Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Guided event chat',
                       style: TextStyle(
                         color: Color(0xFFCB6D22),
@@ -868,8 +1166,28 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                         fontSize: 14,
                       ),
                     ),
-                    SizedBox(height: 10),
+                    const SizedBox(height: 10),
                     Text(
+                      'Step $completed of $_builderStepsCount • ${isReview ? 'Ready to save' : _stepLabel(_step)}',
+                      style: const TextStyle(
+                        color: Color(0xFF0D1B2E),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 7,
+                        backgroundColor: const Color(0xFFE7D9C8),
+                        valueColor:
+                            const AlwaysStoppedAnimation(Color(0xFFCB6D22)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
                       'The assistant will collect category, name, date, time, location, and description. Participant count is optional per event.',
                       style: TextStyle(
                         color: Color(0xFF4E6076),
@@ -882,14 +1200,26 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            if (isReview) _buildSummaryCard(),
             Expanded(
               child: ListView.separated(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-                itemCount: _messages.length,
+                itemCount:
+                    _messages.length + (_thinking ? 1 : 0) + (isReview ? 1 : 0),
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
+                  final messageCount = _messages.length;
+                  final thinkingIndex = _thinking ? messageCount : -1;
+                  final summaryIndex =
+                      isReview ? messageCount + (_thinking ? 1 : 0) : -1;
+
+                  if (_thinking && index == thinkingIndex) {
+                    return const _AssistantTypingIndicator();
+                  }
+                  if (isReview && index == summaryIndex) {
+                    return _buildSummaryCard(key: const ValueKey('summary'));
+                  }
+
                   final msg = _messages[index];
                   return msg.isUser
                       ? _UserMessage(text: msg.text)
@@ -902,8 +1232,10 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Event category (change anytime)',
+                  Text(
+                    isReview
+                        ? 'Review mode: you can still change category'
+                        : 'Event category (change anytime)',
                     style: TextStyle(
                       color: Color(0xFF6A5A4A),
                       fontWeight: FontWeight.w700,
@@ -966,7 +1298,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                               ? 'Review details and save'
                               : _thinking
                                   ? 'Assistant is thinking...'
-                                  : 'Type your response...',
+                                  : _nextPromptForStep(_step),
                           hintStyle: const TextStyle(
                             color: Color(0xFF6D7680),
                             fontSize: 15,
@@ -1014,68 +1346,98 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     );
   }
 
-  Widget _buildSummaryCard() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0x180D1B2E)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Event summary',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0D1B2E),
+  Widget _buildSummaryCard({Key? key}) {
+    return Container(
+      key: key,
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x180D1B2E)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Event summary',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0D1B2E),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _SummaryLine(label: 'Category', value: _category ?? '-'),
+          _SummaryLine(label: 'Name', value: _name ?? '-'),
+          _SummaryLine(
+              label: 'Date', value: _date == null ? '-' : _formatDate(_date!)),
+          _SummaryLine(
+              label: 'Time', value: _time == null ? '-' : _formatTime(_time!)),
+          _SummaryLine(label: 'Location', value: _location ?? '-'),
+          _SummaryLine(
+            label: 'Participant count',
+            value: _hasParticipantLimit
+                ? (_attendees == null ? '-' : _attendees.toString())
+                : 'Not required',
+          ),
+          const _SummaryLine(label: 'Approval status', value: 'Pending'),
+          _SummaryLine(label: 'Description', value: _description ?? '-'),
+          const SizedBox(height: 8),
+          _SummaryLine(
+            label: 'Poster',
+            value: _posterImageUrl == null
+                ? 'Category illustration'
+                : 'Custom image',
+          ),
+          const SizedBox(height: 8),
+          _EventPosterThumb(
+            category: _category ?? 'Event',
+            title: _name ?? 'Event',
+            imageUrl: _posterImageUrl,
+            height: 120,
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _uploadingPoster ? null : _pickAndUploadPoster,
+              icon: _uploadingPoster
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_rounded),
+              label: Text(
+                _uploadingPoster
+                    ? 'Uploading from gallery...'
+                    : 'Upload poster from gallery',
               ),
             ),
-            const SizedBox(height: 10),
-            _SummaryLine(label: 'Category', value: _category ?? '-'),
-            _SummaryLine(label: 'Name', value: _name ?? '-'),
-            _SummaryLine(
-                label: 'Date',
-                value: _date == null ? '-' : _formatDate(_date!)),
-            _SummaryLine(
-                label: 'Time',
-                value: _time == null ? '-' : _formatTime(_time!)),
-            _SummaryLine(label: 'Location', value: _location ?? '-'),
-            _SummaryLine(
-              label: 'Participant count',
-              value: _hasParticipantLimit
-                  ? (_attendees == null ? '-' : _attendees.toString())
-                  : 'Not required',
-            ),
-            _SummaryLine(label: 'Description', value: _description ?? '-'),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _openEditSummarySheet,
-                    child: const Text('Edit'),
-                  ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _openEditSummarySheet,
+                  child: const Text('Edit'),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _saving ? null : _saveEvent,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFCB6D22),
-                    ),
-                    child: const Text('Save event'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _saving ? null : _saveEvent,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFCB6D22),
                   ),
+                  child: const Text('Save event'),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1221,6 +1583,224 @@ class _UserMessage extends StatelessWidget {
             radius: 18,
             backgroundColor: Color(0xFF8E7A69),
             child: Icon(Icons.person_rounded, size: 18, color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantTypingIndicator extends StatelessWidget {
+  const _AssistantTypingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.5;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: const BoxDecoration(
+            color: Color(0xFFCB6D22),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.smart_toy_outlined,
+            color: Colors.white,
+            size: 19,
+          ),
+        ),
+        const SizedBox(width: 12),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A0D1B2E),
+                  blurRadius: 12,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _TypingDot(),
+                SizedBox(width: 6),
+                _TypingDot(),
+                SizedBox(width: 6),
+                _TypingDot(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TypingDot extends StatefulWidget {
+  const _TypingDot();
+
+  @override
+  State<_TypingDot> createState() => _TypingDotState();
+}
+
+class _TypingDotState extends State<_TypingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.35, end: 1.0).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+      ),
+      child: const CircleAvatar(
+        radius: 3,
+        backgroundColor: Color(0xFF9AA8B6),
+      ),
+    );
+  }
+}
+
+class _EventPosterThumb extends StatelessWidget {
+  final String category;
+  final String title;
+  final String? imageUrl;
+  final double height;
+
+  const _EventPosterThumb({
+    required this.category,
+    required this.title,
+    this.imageUrl,
+    this.height = 100,
+  });
+
+  static const _categoryStyles = {
+    'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
+    'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
+    'seminar': [Color(0xFF6A4C93), Color(0xFF9C6ADE)],
+    'conference': [Color(0xFF213555), Color(0xFF4F709C)],
+    'festival': [Color(0xFFB84A00), Color(0xFFFF8A3D)],
+    'meetup': [Color(0xFF355E3B), Color(0xFF5F8D4E)],
+    'webinar': [Color(0xFF005B96), Color(0xFF00A8CC)],
+    'competition': [Color(0xFF6A040F), Color(0xFFDC2F02)],
+    'career fair': [Color(0xFF3A0CA3), Color(0xFF4361EE)],
+    'networking': [Color(0xFF004B23), Color(0xFF38B000)],
+    'sports': [Color(0xFF14213D), Color(0xFFFCA311)],
+    'cultural': [Color(0xFF7B2CBF), Color(0xFFE0AAFF)],
+    'orientation': [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+    'volunteering': [Color(0xFF166534), Color(0xFF22C55E)],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedCategory = category.trim().toLowerCase();
+    final palette = _categoryStyles[normalizedCategory] ??
+        const [Color(0xFF374151), Color(0xFF6B7280)];
+
+    if (imageUrl != null && imageUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.network(
+          imageUrl!,
+          height: height,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) {
+            return _FallbackPoster(
+              category: category,
+              title: title,
+              palette: palette,
+              height: height,
+            );
+          },
+        ),
+      );
+    }
+
+    return _FallbackPoster(
+      category: category,
+      title: title,
+      palette: palette,
+      height: height,
+    );
+  }
+}
+
+class _FallbackPoster extends StatelessWidget {
+  final String category;
+  final String title;
+  final List<Color> palette;
+  final double height;
+
+  const _FallbackPoster({
+    required this.category,
+    required this.title,
+    required this.palette,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(
+          colors: palette,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            category,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              letterSpacing: 0.3,
+            ),
+          ),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              height: 1.1,
+            ),
           ),
         ],
       ),

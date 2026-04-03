@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../models/event_model.dart';
 import '../../../services/event_service.dart';
@@ -42,7 +44,7 @@ class StudentOrganizePage extends StatelessWidget {
                             );
                           },
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 20),
                         const _CreatedEventsSection(),
                       ],
                     ),
@@ -56,6 +58,10 @@ class StudentOrganizePage extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Background
+// ---------------------------------------------------------------------------
 
 class _OrganizeBackground extends StatelessWidget {
   const _OrganizeBackground();
@@ -90,6 +96,10 @@ class _OrganizeBackdropPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
+// ---------------------------------------------------------------------------
+// Hero header
+// ---------------------------------------------------------------------------
 
 class _HeroHeader extends StatefulWidget {
   const _HeroHeader();
@@ -222,6 +232,10 @@ class _TwinkleStar extends AnimatedWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Open builder card
+// ---------------------------------------------------------------------------
+
 class _OpenBuilderCard extends StatelessWidget {
   final VoidCallback onTap;
 
@@ -254,7 +268,7 @@ class _OpenBuilderCard extends StatelessWidget {
                 width: 54,
                 height: 54,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
+                  color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: const Icon(
@@ -300,13 +314,229 @@ class _OpenBuilderCard extends StatelessWidget {
   }
 }
 
-class _CreatedEventsSection extends StatelessWidget {
+// ---------------------------------------------------------------------------
+// Created events section – entirely redesigned
+// ---------------------------------------------------------------------------
+
+class _CreatedEventsSection extends StatefulWidget {
   const _CreatedEventsSection();
 
+  @override
+  State<_CreatedEventsSection> createState() => _CreatedEventsSectionState();
+}
+
+class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
+  final EventService _eventService = EventService();
+  bool _showAll = false;
+
+  // -- poster editor (upload / remove) kept from original ----
+
+  Future<void> _openPosterEditor(
+    BuildContext context,
+    EventModel event,
+  ) async {
+    if (event.id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This event cannot be edited yet.')),
+      );
+      return;
+    }
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFFF6F1EB),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCECECE),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Update event poster',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0D1B2E),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Choose how you want to update this event poster.',
+                style: TextStyle(
+                  color: Color(0xFF596A7E),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D1B2E),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.pop(context, 'upload'),
+                  icon: const Icon(Icons.photo_library_outlined, size: 20),
+                  label: const Text('Upload from gallery',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFD64545),
+                    side: const BorderSide(color: Color(0x30D64545)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.pop(context, 'remove'),
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  label: const Text('Remove custom poster',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (action == null || !context.mounted) return;
+
+    if (action == 'remove') {
+      await _eventService.updateEventPoster(
+        eventId: event.id!,
+        posterImageUrl: null,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Poster removed.')),
+        );
+      }
+      return;
+    }
+
+    if (action != 'upload') return;
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Please sign in again to upload poster.')),
+        );
+      }
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1800,
+      imageQuality: 85,
+    );
+    if (picked == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No image selected from gallery.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final uid = currentUser.uid;
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.')
+          ? picked.name.split('.').last.toLowerCase()
+          : 'jpg';
+      final fileName =
+          '${event.id}_${DateTime.now().millisecondsSinceEpoch.toString()}.$ext';
+      final app = FirebaseAuth.instance.app;
+      final bucket = app.options.storageBucket;
+      final fallbackBucket = (bucket != null && bucket.isNotEmpty)
+          ? bucket
+          : '${app.options.projectId}.firebasestorage.app';
+      final storage = FirebaseStorage.instanceFor(bucket: fallbackBucket);
+
+      final ref = storage.ref().child('event_posters/$uid/$fileName');
+
+      final contentType = switch (ext) {
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'heic' => 'image/heic',
+        'heif' => 'image/heif',
+        _ => 'image/jpeg',
+      };
+
+      await ref.putData(
+        bytes,
+        SettableMetadata(contentType: contentType),
+      );
+      final downloadUrl = await ref.getDownloadURL();
+
+      await _eventService.updateEventPoster(
+        eventId: event.id!,
+        posterImageUrl: downloadUrl,
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Poster updated successfully.')),
+        );
+      }
+    } on FirebaseException catch (e) {
+      if (context.mounted) {
+        final msg = switch (e.code) {
+          'unauthorized' =>
+            'Upload blocked by Firebase Storage rules. Allow authenticated users for event_posters/{uid}.',
+          'object-not-found' =>
+            'Storage bucket not found. Create Firebase Storage for this project.',
+          _ => 'Poster upload failed: ${e.message ?? e.code}',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Poster upload failed: $e')),
+        );
+      }
+    }
+  }
+
+  // -- helpers ----
+
   String _formatDate(DateTime date) {
-    final d = date.day.toString().padLeft(2, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    return '$d/$m/${date.year}';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   String _formatTime(TimeOfDayData time) {
@@ -318,189 +548,2146 @@ class _CreatedEventsSection extends StatelessWidget {
     return '$hh:$mm $period';
   }
 
+  String _statusLabel(EventApprovalStatus status) {
+    switch (status) {
+      case EventApprovalStatus.pending:
+        return 'Pending';
+      case EventApprovalStatus.accepted:
+        return 'Approved';
+      case EventApprovalStatus.rejected:
+        return 'Rejected';
+    }
+  }
+
+  IconData _statusIcon(EventApprovalStatus status) {
+    switch (status) {
+      case EventApprovalStatus.pending:
+        return Icons.schedule_rounded;
+      case EventApprovalStatus.accepted:
+        return Icons.check_circle_rounded;
+      case EventApprovalStatus.rejected:
+        return Icons.cancel_rounded;
+    }
+  }
+
+  Color _statusColor(EventApprovalStatus status) {
+    switch (status) {
+      case EventApprovalStatus.pending:
+        return const Color(0xFFCB6D22);
+      case EventApprovalStatus.accepted:
+        return const Color(0xFF2F9E44);
+      case EventApprovalStatus.rejected:
+        return const Color(0xFFD64545);
+    }
+  }
+
+  Color _statusBg(EventApprovalStatus status) {
+    switch (status) {
+      case EventApprovalStatus.pending:
+        return const Color(0xFFFFF4EB);
+      case EventApprovalStatus.accepted:
+        return const Color(0xFFEDF9F0);
+      case EventApprovalStatus.rejected:
+        return const Color(0xFFFDEDED);
+    }
+  }
+
+  // -- event detail bottom sheet ----
+
+  void _openEventDetail(BuildContext context, EventModel event) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _EventDetailSheet(
+          event: event,
+          onUpdatePoster: () {
+            Navigator.pop(context);
+            _openPosterEditor(context, event);
+          },
+          eventService: _eventService,
+          formatDate: _formatDate,
+          formatTime: _formatTime,
+          statusLabel: _statusLabel,
+          statusIcon: _statusIcon,
+          statusColor: _statusColor,
+          statusBg: _statusBg,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final eventService = EventService();
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0x140D1B2E)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0B0D1B2E),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: StreamBuilder<List<EventModel>>(
-        stream: uid == null ? null : eventService.streamUserEvents(uid),
-        builder: (context, snapshot) {
-          final events = snapshot.data ?? const <EventModel>[];
-          final count = events.length;
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 14),
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF4E8DD),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.event_note_rounded,
-                      color: Color(0xFFCB6D22),
-                    ),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFCB6D22), Color(0xFFE8943D)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Your created events',
-                      style: TextStyle(
-                        color: Color(0xFF0D1B2E),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFD),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0x190D1B2E)),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: const TextStyle(
-                        color: Color(0xFF41546A),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.event_note_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
               ),
-              const SizedBox(height: 14),
-              if (uid == null)
-                const Text(
-                  'Sign in to view your created events.',
-                  style: TextStyle(
-                    color: Color(0xFF596A7E),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                )
-              else if (snapshot.connectionState == ConnectionState.waiting)
-                const SizedBox(
-                  height: 28,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Color(0xFFCB6D22),
-                      ),
+              const SizedBox(width: 10),
+              const Text(
+                'Your Events',
+                style: TextStyle(
+                  color: Color(0xFF0D1B2E),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Event list
+        StreamBuilder<List<EventModel>>(
+          stream: uid == null ? null : _eventService.streamUserEvents(uid),
+          builder: (context, snapshot) {
+            if (uid == null) {
+              return _buildEmptyState(
+                icon: Icons.login_rounded,
+                title: 'Sign in required',
+                subtitle: 'Sign in to view your created events.',
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return _buildLoadingState();
+            }
+
+            final events = snapshot.data ?? const <EventModel>[];
+            if (events.isEmpty) {
+              return _buildEmptyState(
+                icon: Icons.celebration_outlined,
+                title: 'No events yet',
+                subtitle:
+                    'Create your first event using the chatbot above and it will appear here.',
+              );
+            }
+
+            final visibleEvents = _showAll ? events : events.take(3).toList();
+            final hasMore = events.length > 3;
+
+            return Column(
+              children: [
+                // Event cards
+                ...List.generate(visibleEvents.length, (i) {
+                  return _AnimatedEventCard(
+                    index: i,
+                    child: _EventCard(
+                      event: visibleEvents[i],
+                      formatDate: _formatDate,
+                      formatTime: _formatTime,
+                      statusLabel: _statusLabel,
+                      statusIcon: _statusIcon,
+                      statusColor: _statusColor,
+                      statusBg: _statusBg,
+                      onTap: () =>
+                          _openEventDetail(context, visibleEvents[i]),
+                      onPosterTap: () =>
+                          _openPosterEditor(context, visibleEvents[i]),
                     ),
-                  ),
-                )
-              else if (events.isEmpty)
-                const Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'No events created yet.',
-                        style: TextStyle(
-                          color: Color(0xFF596A7E),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                  );
+                }),
+
+                // View all / collapse toggle
+                if (hasMore)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Center(
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _showAll = !_showAll),
+                        icon: Icon(
+                          _showAll
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          size: 22,
+                        ),
+                        label: Text(
+                          _showAll
+                              ? 'Show less'
+                              : 'View all ${events.length} events',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFCB6D22),
                         ),
                       ),
                     ),
-                    Icon(
-                      Icons.event_busy_rounded,
-                      color: Color(0xFFCB6D22),
-                    ),
-                  ],
-                )
-              else
-                Column(
-                  children: events
-                      .take(3)
-                      .map(
-                        (event) => Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFD),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0x160D1B2E)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF4E8DD),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.event_rounded,
-                                  color: Color(0xFFCB6D22),
-                                  size: 18,
-                                ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0x0F0D1B2E)),
+      ),
+      child: const Column(
+        children: [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: Color(0xFFCB6D22),
+            ),
+          ),
+          SizedBox(height: 12),
+          Text(
+            'Loading your events...',
+            style: TextStyle(
+              color: Color(0xFF6A7C90),
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0x0F0D1B2E)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x080D1B2E),
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4EB),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(icon, color: const Color(0xFFCB6D22), size: 30),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF0D1B2E),
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF6A7C90),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Animated wrapper for staggered card entry
+// ---------------------------------------------------------------------------
+
+class _AnimatedEventCard extends StatefulWidget {
+  final int index;
+  final Widget child;
+
+  const _AnimatedEventCard({required this.index, required this.child});
+
+  @override
+  State<_AnimatedEventCard> createState() => _AnimatedEventCardState();
+}
+
+class _AnimatedEventCardState extends State<_AnimatedEventCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+    Future.delayed(Duration(milliseconds: 80 * widget.index), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SlideTransition(
+        position: _slideAnim,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event card (main list card)
+// ---------------------------------------------------------------------------
+
+class _EventCard extends StatelessWidget {
+  final EventModel event;
+  final String Function(DateTime) formatDate;
+  final String Function(TimeOfDayData) formatTime;
+  final String Function(EventApprovalStatus) statusLabel;
+  final IconData Function(EventApprovalStatus) statusIcon;
+  final Color Function(EventApprovalStatus) statusColor;
+  final Color Function(EventApprovalStatus) statusBg;
+  final VoidCallback onTap;
+  final VoidCallback onPosterTap;
+
+  const _EventCard({
+    required this.event,
+    required this.formatDate,
+    required this.formatTime,
+    required this.statusLabel,
+    required this.statusIcon,
+    required this.statusColor,
+    required this.statusBg,
+    required this.onTap,
+    required this.onPosterTap,
+  });
+
+  static const _categoryGradients = {
+    'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
+    'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
+    'seminar': [Color(0xFF6A4C93), Color(0xFF9C6ADE)],
+    'conference': [Color(0xFF213555), Color(0xFF4F709C)],
+    'festival': [Color(0xFFB84A00), Color(0xFFFF8A3D)],
+    'meetup': [Color(0xFF355E3B), Color(0xFF5F8D4E)],
+    'webinar': [Color(0xFF005B96), Color(0xFF00A8CC)],
+    'competition': [Color(0xFF6A040F), Color(0xFFDC2F02)],
+    'career fair': [Color(0xFF3A0CA3), Color(0xFF4361EE)],
+    'networking': [Color(0xFF004B23), Color(0xFF38B000)],
+    'sports': [Color(0xFF14213D), Color(0xFFFCA311)],
+    'cultural': [Color(0xFF7B2CBF), Color(0xFFE0AAFF)],
+    'orientation': [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+    'volunteering': [Color(0xFF166534), Color(0xFF22C55E)],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final palette =
+        _categoryGradients[event.category.trim().toLowerCase()] ??
+            const [Color(0xFF374151), Color(0xFF6B7280)];
+    final sColor = statusColor(event.approvalStatus);
+    final sBg = statusBg(event.approvalStatus);
+    final sLabel = statusLabel(event.approvalStatus);
+    final sIcon = statusIcon(event.approvalStatus);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0x0E0D1B2E)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0C0D1B2E),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Poster / gradient header
+                _buildPosterHeader(palette),
+
+                // Details body
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title + status
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF0D1B2E),
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                height: 1.2,
                               ),
-                              const SizedBox(width: 10),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: sBg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: sColor.withValues(alpha: 0.25)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(sIcon, size: 13, color: sColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  sLabel,
+                                  style: TextStyle(
+                                    color: sColor,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Meta info row
+                      Row(
+                        children: [
+                          _MetaChip(
+                            icon: Icons.calendar_today_rounded,
+                            label: formatDate(event.date),
+                          ),
+                          const SizedBox(width: 10),
+                          _MetaChip(
+                            icon: Icons.access_time_rounded,
+                            label: formatTime(event.time),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _MetaChip(
+                            icon: Icons.location_on_outlined,
+                            label: event.location,
+                            flex: true,
+                          ),
+                          const SizedBox(width: 10),
+                          _MetaChip(
+                            icon: Icons.people_outline_rounded,
+                            label: event.hasParticipantLimit
+                                ? '${event.joinedParticipantCount}/${event.attendeeCount ?? '∞'}'
+                                : '${event.joinedParticipantCount} joined',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Actions row
+                      Row(
+                        children: [
+                          _ActionChip(
+                            icon: Icons.image_outlined,
+                            label: 'Update Poster',
+                            onTap: onPosterTap,
+                          ),
+                          const Spacer(),
+                          const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 14,
+                            color: Color(0xFFABB8C8),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPosterHeader(List<Color> palette) {
+    if (event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        child: SizedBox(
+          height: 140,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                event.posterImageUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    _fallbackGradientHeader(palette),
+              ),
+              // Gradient overlay for readability
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 56,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.35),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Category chip on poster
+              Positioned(
+                top: 10,
+                left: 12,
+                child: _CategoryBadge(label: event.category),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _fallbackGradientHeader(palette);
+  }
+
+  Widget _fallbackGradientHeader(List<Color> palette) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+      child: Container(
+        height: 100,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: palette,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Decorative circles
+            Positioned(
+              right: -20,
+              top: -25,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 30,
+              bottom: -15,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+            // Category badge
+            Positioned(
+              top: 12,
+              left: 14,
+              child: _CategoryBadge(label: event.category),
+            ),
+            // Event initial letter
+            Positioned(
+              right: 18,
+              bottom: 10,
+              child: Text(
+                event.name.isNotEmpty
+                    ? event.name[0].toUpperCase()
+                    : 'E',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  fontSize: 56,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Small UI pieces
+// ---------------------------------------------------------------------------
+
+class _CategoryBadge extends StatelessWidget {
+  final String label;
+  const _CategoryBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0x73000000),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool flex;
+
+  const _MetaChip({
+    required this.icon,
+    required this.label,
+    this.flex = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF8A98A9)),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF4E6076),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (flex) return Expanded(child: content);
+    return content;
+  }
+}
+
+class _ActionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0F4FA),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0x0F0D1B2E)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: const Color(0xFF3A5068)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF29425D),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event detail bottom sheet
+// ---------------------------------------------------------------------------
+
+class _EventDetailSheet extends StatelessWidget {
+  final EventModel event;
+  final VoidCallback onUpdatePoster;
+  final EventService eventService;
+  final String Function(DateTime) formatDate;
+  final String Function(TimeOfDayData) formatTime;
+  final String Function(EventApprovalStatus) statusLabel;
+  final IconData Function(EventApprovalStatus) statusIcon;
+  final Color Function(EventApprovalStatus) statusColor;
+  final Color Function(EventApprovalStatus) statusBg;
+
+  const _EventDetailSheet({
+    required this.event,
+    required this.onUpdatePoster,
+    required this.eventService,
+    required this.formatDate,
+    required this.formatTime,
+    required this.statusLabel,
+    required this.statusIcon,
+    required this.statusColor,
+    required this.statusBg,
+  });
+
+  static const _categoryGradients = {
+    'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
+    'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
+    'seminar': [Color(0xFF6A4C93), Color(0xFF9C6ADE)],
+    'conference': [Color(0xFF213555), Color(0xFF4F709C)],
+    'festival': [Color(0xFFB84A00), Color(0xFFFF8A3D)],
+    'meetup': [Color(0xFF355E3B), Color(0xFF5F8D4E)],
+    'webinar': [Color(0xFF005B96), Color(0xFF00A8CC)],
+    'competition': [Color(0xFF6A040F), Color(0xFFDC2F02)],
+    'career fair': [Color(0xFF3A0CA3), Color(0xFF4361EE)],
+    'networking': [Color(0xFF004B23), Color(0xFF38B000)],
+    'sports': [Color(0xFF14213D), Color(0xFFFCA311)],
+    'cultural': [Color(0xFF7B2CBF), Color(0xFFE0AAFF)],
+    'orientation': [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+    'volunteering': [Color(0xFF166534), Color(0xFF22C55E)],
+  };
+
+  void _openEditSheet(BuildContext context) {
+    if (event.id == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return _EditEventSheet(
+          event: event,
+          eventService: eventService,
+          formatDate: formatDate,
+          formatTime: formatTime,
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette =
+        _categoryGradients[event.category.trim().toLowerCase()] ??
+            const [Color(0xFF374151), Color(0xFF6B7280)];
+    final sColor = statusColor(event.approvalStatus);
+    final sBg = statusBg(event.approvalStatus);
+    final isRejected = event.approvalStatus == EventApprovalStatus.rejected;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF6F1EB),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Drag handle
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 6),
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCECECE),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Poster / gradient
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: GestureDetector(
+                    onTap: (event.posterImageUrl != null &&
+                            event.posterImageUrl!.isNotEmpty)
+                        ? () {
+                            Navigator.of(context).push(
+                              PageRouteBuilder(
+                                opaque: false,
+                                barrierColor: Colors.transparent,
+                                pageBuilder: (_, __, ___) =>
+                                    _FullScreenImageViewer(
+                                  imageUrl: event.posterImageUrl!,
+                                  heroTag: 'detail_poster_${event.id}',
+                                ),
+                                transitionsBuilder:
+                                    (_, animation, __, child) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: child,
+                                  );
+                                },
+                                transitionDuration:
+                                    const Duration(milliseconds: 250),
+                                reverseTransitionDuration:
+                                    const Duration(milliseconds: 200),
+                              ),
+                            );
+                          }
+                        : null,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: _buildDetailPoster(palette),
+                    ),
+                  ),
+                ),
+
+                // Content
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title + edit button row
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.name,
+                              style: const TextStyle(
+                                color: Color(0xFF0D1B2E),
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                height: 1.15,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          if (event.id != null)
+                            _EditButton(onTap: () => _openEditSheet(context)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Status badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: sBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: sColor.withValues(alpha: 0.25)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(statusIcon(event.approvalStatus),
+                                size: 15, color: sColor),
+                            const SizedBox(width: 5),
+                            Text(
+                              statusLabel(event.approvalStatus),
+                              style: TextStyle(
+                                color: sColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Rejected banner
+                      if (isRejected) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDEDED),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: const Color(0x20D64545)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.info_outline_rounded,
+                                  size: 18, color: Color(0xFFD64545)),
+                              SizedBox(width: 10),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      event.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFF1F334A),
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${event.category}  |  ${_formatDate(event.date)}  |  ${_formatTime(event.time)}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFF66778A),
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  'This event was rejected. Edit details and resubmit for approval.',
+                                  style: TextStyle(
+                                    color: Color(0xFFB33B3B),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      )
-                      .toList(),
+                      ],
+                      const SizedBox(height: 20),
+
+                      // Info tiles
+                      _DetailTile(
+                        icon: Icons.category_rounded,
+                        label: 'Category',
+                        value: event.category,
+                        locked: true,
+                      ),
+                      _DetailTile(
+                        icon: Icons.calendar_today_rounded,
+                        label: 'Date',
+                        value: formatDate(event.date),
+                      ),
+                      _DetailTile(
+                        icon: Icons.access_time_rounded,
+                        label: 'Time',
+                        value: formatTime(event.time),
+                      ),
+                      _DetailTile(
+                        icon: Icons.location_on_outlined,
+                        label: 'Location',
+                        value: event.location,
+                      ),
+                      _DetailTile(
+                        icon: Icons.people_outline_rounded,
+                        label: 'Participants',
+                        value: event.hasParticipantLimit
+                            ? '${event.joinedParticipantCount} / ${event.attendeeCount ?? '∞'} joined'
+                            : '${event.joinedParticipantCount} joined (no limit)',
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Description section
+                      const Text(
+                        'Description',
+                        style: TextStyle(
+                          color: Color(0xFF0D1B2E),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border:
+                              Border.all(color: const Color(0x0F0D1B2E)),
+                        ),
+                        child: Text(
+                          event.description,
+                          style: const TextStyle(
+                            color: Color(0xFF3A5068),
+                            fontSize: 14.5,
+                            height: 1.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Action buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 50,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF0D1B2E),
+                                  side: const BorderSide(
+                                      color: Color(0x22CB6D22)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(14)),
+                                ),
+                                onPressed: onUpdatePoster,
+                                icon: const Icon(Icons.image_outlined,
+                                    size: 19),
+                                label: const Text(
+                                  'Poster',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: SizedBox(
+                              height: 50,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFCB6D22),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(14)),
+                                ),
+                                onPressed: event.id != null
+                                    ? () => _openEditSheet(context)
+                                    : null,
+                                icon: const Icon(Icons.edit_outlined,
+                                    size: 19),
+                                label: const Text(
+                                  'Edit Details',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailPoster(List<Color> palette) {
+    if (event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty) {
+      return Hero(
+        tag: 'detail_poster_${event.id}',
+        child: SizedBox(
+          height: 200,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                event.posterImageUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    _fallbackDetailGradient(palette),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 64,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.4),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 12,
+                left: 14,
+                child: _CategoryBadge(label: event.category),
+              ),
+              // Expand hint icon
+              Positioned(
+                top: 12,
+                right: 14,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.fullscreen_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
             ],
-          );
-        },
+          ),
+        ),
+      );
+    }
+    return _fallbackDetailGradient(palette);
+  }
+
+  Widget _fallbackDetailGradient(List<Color> palette) {
+    return Container(
+      height: 160,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: palette,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -30,
+            top: -30,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -15,
+            bottom: -20,
+            child: Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 12,
+            left: 14,
+            child: _CategoryBadge(label: event.category),
+          ),
+          Positioned(
+            right: 20,
+            bottom: 14,
+            child: Text(
+              event.name.isNotEmpty
+                  ? event.name[0].toUpperCase()
+                  : 'E',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.15),
+                fontSize: 72,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Detail tile – used inside the detail sheet
+// ---------------------------------------------------------------------------
+
+class _DetailTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool locked;
+
+  const _DetailTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.locked = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4EB),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0x20CB6D22)),
+            ),
+            child: Icon(icon, size: 18, color: const Color(0xFFCB6D22)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Color(0xFF9A8B78),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    if (locked) ...[
+                      const SizedBox(width: 5),
+                      const Icon(Icons.lock_outline_rounded,
+                          size: 12, color: Color(0xFFBFAF9B)),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFF1F334A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Edit button
+// ---------------------------------------------------------------------------
+
+class _EditButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _EditButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF4EB),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0x20CB6D22)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_outlined, size: 15, color: Color(0xFFCB6D22)),
+              SizedBox(width: 5),
+              Text(
+                'Edit',
+                style: TextStyle(
+                  color: Color(0xFFCB6D22),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Edit event sheet
+// ---------------------------------------------------------------------------
+
+class _EditEventSheet extends StatefulWidget {
+  final EventModel event;
+  final EventService eventService;
+  final String Function(DateTime) formatDate;
+  final String Function(TimeOfDayData) formatTime;
+
+  const _EditEventSheet({
+    required this.event,
+    required this.eventService,
+    required this.formatDate,
+    required this.formatTime,
+  });
+
+  @override
+  State<_EditEventSheet> createState() => _EditEventSheetState();
+}
+
+class _EditEventSheetState extends State<_EditEventSheet> {
+  late DateTime _date;
+  late TimeOfDay _time;
+  late TextEditingController _locationCtrl;
+  late TextEditingController _descriptionCtrl;
+  late TextEditingController _attendeesCtrl;
+  late bool _hasParticipantLimit;
+  bool _saving = false;
+
+  bool get _isRejected =>
+      widget.event.approvalStatus == EventApprovalStatus.rejected;
+  bool get _isPending =>
+      widget.event.approvalStatus == EventApprovalStatus.pending;
+  bool get _canEditAttendees => _isPending || _isRejected;
+
+  @override
+  void initState() {
+    super.initState();
+    _date = widget.event.date;
+    _time = TimeOfDay(
+        hour: widget.event.time.hour, minute: widget.event.time.minute);
+    _locationCtrl = TextEditingController(text: widget.event.location);
+    _descriptionCtrl = TextEditingController(text: widget.event.description);
+    _attendeesCtrl = TextEditingController(
+        text: widget.event.attendeeCount?.toString() ?? '');
+    _hasParticipantLimit = widget.event.hasParticipantLimit;
+  }
+
+  @override
+  void dispose() {
+    _locationCtrl.dispose();
+    _descriptionCtrl.dispose();
+    _attendeesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(DateTime.now().year - 1),
+      lastDate: DateTime(DateTime.now().year + 5),
+    );
+    if (picked != null) {
+      setState(() => _date = DateTime(picked.year, picked.month, picked.day));
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _time,
+    );
+    if (picked != null) {
+      setState(() => _time = picked);
+    }
+  }
+
+  Future<void> _save({bool resubmit = false}) async {
+    if (_saving) return;
+
+    final location = _locationCtrl.text.trim();
+    final description = _descriptionCtrl.text.trim();
+    final attendees = int.tryParse(_attendeesCtrl.text.trim());
+
+    if (location.length < 2) {
+      _showError('Location is too short.');
+      return;
+    }
+    if (description.length < 8) {
+      _showError('Description must be at least 8 characters.');
+      return;
+    }
+    if (_hasParticipantLimit &&
+        _canEditAttendees &&
+        (attendees == null || attendees <= 0)) {
+      _showError('Please enter a valid attendee count.');
+      return;
+    }
+
+    setState(() => _saving = true);
+
+    try {
+      await widget.eventService.updateEventDetails(
+        eventId: widget.event.id!,
+        date: _date,
+        timeHour: _time.hour,
+        timeMinute: _time.minute,
+        location: location,
+        description: description,
+        hasParticipantLimit: _canEditAttendees ? _hasParticipantLimit : null,
+        attendeeCount:
+            (_canEditAttendees && _hasParticipantLimit) ? attendees : null,
+        resetApproval: resubmit,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(resubmit
+              ? 'Event updated and resubmitted for approval.'
+              : 'Event details updated.'),
+        ),
+      );
+    } catch (e) {
+      if (mounted) _showError('Failed to update: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+  }
+
+  String _fmtDate(DateTime d) => widget.formatDate(d);
+  String _fmtTime(TimeOfDay t) {
+    final period = t.hour >= 12 ? 'PM' : 'AM';
+    final hour12 = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
+    return '${hour12.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} $period';
+  }
+
+  Widget _sectionLabel(String text) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 16,
+          decoration: BoxDecoration(
+            color: const Color(0xFFCB6D22),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xFF0D1B2E),
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF6F1EB),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+            22, 12, 22, 22 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCECECE),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // Header
+            const Text(
+              'Edit Event Details',
+              style: TextStyle(
+                color: Color(0xFF0D1B2E),
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // Info about edit policy
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8F2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0x18CB6D22)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 16, color: Color(0xFFCB6D22)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _isRejected
+                          ? 'Edit and resubmit for admin approval. Name & category cannot be changed.'
+                          : 'You can update logistical details. Name & category are locked after submission.',
+                      style: const TextStyle(
+                        color: Color(0xFF6A5638),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Locked fields display
+            _LockedFieldDisplay(
+              icon: Icons.badge_outlined,
+              label: 'Event Name',
+              value: widget.event.name,
+            ),
+            const SizedBox(height: 10),
+            _LockedFieldDisplay(
+              icon: Icons.category_rounded,
+              label: 'Category',
+              value: widget.event.category,
+            ),
+            const SizedBox(height: 18),
+
+            // Editable: Date & Time
+            _sectionLabel('Date & Time'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _EditPickerButton(
+                    icon: Icons.calendar_today_rounded,
+                    label: _fmtDate(_date),
+                    onTap: _pickDate,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _EditPickerButton(
+                    icon: Icons.access_time_rounded,
+                    label: _fmtTime(_time),
+                    onTap: _pickTime,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+
+            // Editable: Location
+            _sectionLabel('Location'),
+            const SizedBox(height: 8),
+            _StyledTextField(
+              controller: _locationCtrl,
+              hint: 'Event venue or address',
+              icon: Icons.location_on_outlined,
+            ),
+            const SizedBox(height: 18),
+
+            // Editable: Participant limit (only if pending/rejected)
+            if (_canEditAttendees) ...[
+              _sectionLabel('Participants'),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0x120D1B2E)),
+                ),
+                child: SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  activeTrackColor: const Color(0xFFCB6D22),
+                  value: _hasParticipantLimit,
+                  onChanged: (v) {
+                    setState(() => _hasParticipantLimit = v);
+                    if (!v) _attendeesCtrl.clear();
+                  },
+                  title: const Text(
+                    'Track participant count',
+                    style: TextStyle(
+                      color: Color(0xFF1F334A),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              if (_hasParticipantLimit) ...[
+                const SizedBox(height: 10),
+                _StyledTextField(
+                  controller: _attendeesCtrl,
+                  hint: 'Max attendee count',
+                  icon: Icons.people_outline_rounded,
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+              const SizedBox(height: 18),
+            ],
+
+            // Editable: Description
+            _sectionLabel('Description'),
+            const SizedBox(height: 8),
+            _StyledTextField(
+              controller: _descriptionCtrl,
+              hint: 'Event description',
+              icon: Icons.notes_rounded,
+              maxLines: 4,
+            ),
+            const SizedBox(height: 24),
+
+            // Submit buttons
+            if (_isRejected) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFCB6D22),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _saving ? null : () => _save(resubmit: true),
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded, size: 19),
+                  label: Text(
+                    _saving ? 'Resubmitting...' : 'Save & Resubmit for Approval',
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Center(
+                child: Text(
+                  'Status will reset to Pending',
+                  style: TextStyle(
+                    color: Color(0xFF6A7C90),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ] else ...[
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFCB6D22),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _saving ? null : () => _save(),
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_rounded, size: 20),
+                  label: Text(
+                    _saving ? 'Saving...' : 'Save Changes',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Locked field display (non-editable)
+// ---------------------------------------------------------------------------
+
+class _LockedFieldDisplay extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _LockedFieldDisplay({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF6F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x10CB6D22)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0EBE4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 16, color: const Color(0xFF9A8B78)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Color(0xFF9A8B78),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.lock_outline_rounded,
+                        size: 11, color: Color(0xFFBFAF9B)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFF4A3F33),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Styled text field for edit sheet
+// ---------------------------------------------------------------------------
+
+class _StyledTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final IconData icon;
+  final int maxLines;
+  final TextInputType keyboardType;
+
+  const _StyledTextField({
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    this.maxLines = 1,
+    this.keyboardType = TextInputType.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x120D1B2E)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060D1B2E),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        cursorColor: const Color(0xFFCB6D22),
+        style: const TextStyle(
+          color: Color(0xFF1F334A),
+          fontSize: 14.5,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          prefixIcon: Icon(icon, size: 20, color: const Color(0xFFCB6D22)),
+          hintText: hint,
+          hintStyle: const TextStyle(
+            color: Color(0xFFB8ADA0),
+            fontWeight: FontWeight.w500,
+          ),
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Edit picker button (date / time)
+// ---------------------------------------------------------------------------
+
+class _EditPickerButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _EditPickerButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0x120D1B2E)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x060D1B2E),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFFCB6D22)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF1F334A),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: Color(0xFFCB6D22)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Full-screen image viewer with pinch-to-zoom
+// ---------------------------------------------------------------------------
+
+class _FullScreenImageViewer extends StatefulWidget {
+  final String imageUrl;
+  final String heroTag;
+
+  const _FullScreenImageViewer({
+    required this.imageUrl,
+    required this.heroTag,
+  });
+
+  @override
+  State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
+}
+
+class _FullScreenImageViewerState extends State<_FullScreenImageViewer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bgController;
+  late final Animation<double> _bgOpacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..forward();
+    _bgOpacity = CurvedAnimation(parent: _bgController, curve: Curves.easeOut);
+  }
+
+  @override
+  void dispose() {
+    _bgController.dispose();
+    super.dispose();
+  }
+
+  void _dismiss() {
+    _bgController.reverse().then((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Animated dark backdrop
+          FadeTransition(
+            opacity: _bgOpacity,
+            child: GestureDetector(
+              onTap: _dismiss,
+              child: Container(color: const Color(0xF0000000)),
+            ),
+          ),
+
+          // Zoomable image
+          Center(
+            child: Hero(
+              tag: widget.heroTag,
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(
+                  widget.imageUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    final total = loadingProgress.expectedTotalBytes;
+                    final loaded = loadingProgress.cumulativeBytesLoaded;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: total != null ? loaded / total : null,
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, __, ___) => const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.broken_image_outlined,
+                          color: Colors.white54, size: 48),
+                      SizedBox(height: 12),
+                      Text(
+                        'Failed to load image',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Close button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 12,
+            right: 16,
+            child: FadeTransition(
+              opacity: _bgOpacity,
+              child: GestureDetector(
+                onTap: _dismiss,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2)),
+                  ),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Pinch-to-zoom hint (shows briefly)
+          Positioned(
+            bottom: MediaQuery.of(context).padding.bottom + 24,
+            left: 0,
+            right: 0,
+            child: FadeTransition(
+              opacity: _bgOpacity,
+              child: const Center(
+                child: Text(
+                  'Pinch to zoom  •  Tap background to close',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

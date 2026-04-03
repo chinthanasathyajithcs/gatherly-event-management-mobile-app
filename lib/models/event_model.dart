@@ -1,5 +1,32 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+enum EventApprovalStatus { pending, accepted, rejected }
+
+extension EventApprovalStatusX on EventApprovalStatus {
+  String get value {
+    switch (this) {
+      case EventApprovalStatus.pending:
+        return 'pending';
+      case EventApprovalStatus.accepted:
+        return 'accepted';
+      case EventApprovalStatus.rejected:
+        return 'rejected';
+    }
+  }
+}
+
+EventApprovalStatus parseEventApprovalStatus(String? raw) {
+  switch ((raw ?? '').trim().toLowerCase()) {
+    case 'accepted':
+    case 'approved':
+      return EventApprovalStatus.accepted;
+    case 'rejected':
+      return EventApprovalStatus.rejected;
+    default:
+      return EventApprovalStatus.pending;
+  }
+}
+
 class EventModel {
   final String? id;
   final String createdBy;
@@ -13,6 +40,8 @@ class EventModel {
   final List<String> joinedParticipantIds;
   final int joinedParticipantCount;
   final String description;
+  final EventApprovalStatus approvalStatus;
+  final String? posterImageUrl;
   final Timestamp? createdAt;
 
   EventModel({
@@ -28,12 +57,23 @@ class EventModel {
     this.joinedParticipantIds = const [],
     this.joinedParticipantCount = 0,
     required this.description,
+    this.approvalStatus = EventApprovalStatus.pending,
+    this.posterImageUrl,
     this.createdAt,
   });
 
   factory EventModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final map = doc.data() ?? <String, dynamic>{};
     final Timestamp dateTs = map['eventDate'] as Timestamp? ?? Timestamp.now();
+
+    final joinedParticipants = (map['joinedParticipantIds'] as List<dynamic>? ??
+            map['joinedStudentIds'] as List<dynamic>? ??
+            const [])
+        .whereType<String>()
+        .toList();
+
+    final statusRaw =
+        map['approvalStatus'] as String? ?? map['status'] as String?;
 
     return EventModel(
       id: doc.id,
@@ -49,12 +89,15 @@ class EventModel {
       hasParticipantLimit: map['hasParticipantLimit'] as bool? ??
           ((map['attendeeCount'] as int?) != null),
       attendeeCount: map['attendeeCount'] as int?,
-      joinedParticipantIds:
-          (map['joinedParticipantIds'] as List<dynamic>? ?? const [])
-              .whereType<String>()
-              .toList(),
-      joinedParticipantCount: map['joinedParticipantCount'] as int? ?? 0,
+      joinedParticipantIds: joinedParticipants,
+      joinedParticipantCount: map['joinedParticipantCount'] as int? ??
+          map['joinedStudentCount'] as int? ??
+          joinedParticipants.length,
       description: map['description'] as String? ?? '',
+      approvalStatus: parseEventApprovalStatus(statusRaw),
+      posterImageUrl: (map['posterImageUrl'] as String?)?.trim().isEmpty == true
+          ? null
+          : (map['posterImageUrl'] as String?),
       createdAt: map['createdAt'] as Timestamp?,
     );
   }
@@ -73,6 +116,9 @@ class EventModel {
       'joinedParticipantIds': joinedParticipantIds,
       'joinedParticipantCount': joinedParticipantCount,
       'description': description,
+      'approvalStatus': approvalStatus.value,
+      'status': approvalStatus.value,
+      'posterImageUrl': posterImageUrl,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }

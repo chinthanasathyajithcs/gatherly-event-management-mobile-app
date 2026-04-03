@@ -16,12 +16,20 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   // Initialize Firebase
+  final projectId = dotenv.env['FIREBASE_PROJECT_ID']!;
+  final configuredBucket = dotenv.env['FIREBASE_STORAGE_BUCKET']?.trim();
+  final storageBucket =
+      (configuredBucket != null && configuredBucket.isNotEmpty)
+          ? configuredBucket
+          : '$projectId.firebasestorage.app';
+
   await Firebase.initializeApp(
     options: FirebaseOptions(
       apiKey: dotenv.env['FIREBASE_API_KEY']!,
       appId: dotenv.env['FIREBASE_APP_ID']!,
       messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
-      projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+      projectId: projectId,
+      storageBucket: storageBucket,
     ),
   );
 

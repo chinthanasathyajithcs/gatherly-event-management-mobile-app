@@ -26,6 +26,84 @@ class EventService {
     await _events.add(event.toMap());
   }
 
+  Future<void> updateEventStatus({
+    required String eventId,
+    required EventApprovalStatus status,
+  }) async {
+    await _events.doc(eventId).update({
+      'approvalStatus': status.value,
+      'status': status.value,
+    });
+  }
+
+  Future<void> approveEvent(String eventId) {
+    return updateEventStatus(
+      eventId: eventId,
+      status: EventApprovalStatus.accepted,
+    );
+  }
+
+  Future<void> rejectEvent(String eventId) {
+    return updateEventStatus(
+      eventId: eventId,
+      status: EventApprovalStatus.rejected,
+    );
+  }
+
+  Future<void> updateEventPoster({
+    required String eventId,
+    String? posterImageUrl,
+  }) async {
+    await _events.doc(eventId).update({
+      'posterImageUrl': posterImageUrl,
+    });
+  }
+
+  Future<void> updateEventDetails({
+    required String eventId,
+    DateTime? date,
+    int? timeHour,
+    int? timeMinute,
+    String? location,
+    String? description,
+    bool? hasParticipantLimit,
+    int? attendeeCount,
+    bool resetApproval = false,
+  }) async {
+    final updates = <String, dynamic>{};
+
+    if (date != null) {
+      updates['eventDate'] = Timestamp.fromDate(date);
+    }
+    if (timeHour != null && timeMinute != null) {
+      updates['timeHour'] = timeHour;
+      updates['timeMinute'] = timeMinute;
+    }
+    if (location != null) {
+      updates['location'] = location;
+    }
+    if (description != null) {
+      updates['description'] = description;
+    }
+    if (hasParticipantLimit != null) {
+      updates['hasParticipantLimit'] = hasParticipantLimit;
+      if (!hasParticipantLimit) {
+        updates['attendeeCount'] = null;
+      }
+    }
+    if (attendeeCount != null) {
+      updates['attendeeCount'] = attendeeCount;
+    }
+    if (resetApproval) {
+      updates['approvalStatus'] = EventApprovalStatus.pending.value;
+      updates['status'] = EventApprovalStatus.pending.value;
+    }
+
+    if (updates.isNotEmpty) {
+      await _events.doc(eventId).update(updates);
+    }
+  }
+
   Future<void> joinEvent(
       {required String eventId, required String userId}) async {
     final docRef = _events.doc(eventId);
@@ -39,7 +117,9 @@ class EventService {
       final map = snapshot.data() ?? <String, dynamic>{};
       final hasLimit = map['hasParticipantLimit'] as bool? ?? false;
       final limit = map['attendeeCount'] as int?;
-      final joined = (map['joinedParticipantIds'] as List<dynamic>? ?? const [])
+      final joined = (map['joinedParticipantIds'] as List<dynamic>? ??
+              map['joinedStudentIds'] as List<dynamic>? ??
+              const [])
           .whereType<String>()
           .toList();
 
@@ -67,7 +147,9 @@ class EventService {
       }
 
       final map = snapshot.data() ?? <String, dynamic>{};
-      final joined = (map['joinedParticipantIds'] as List<dynamic>? ?? const [])
+      final joined = (map['joinedParticipantIds'] as List<dynamic>? ??
+              map['joinedStudentIds'] as List<dynamic>? ??
+              const [])
           .whereType<String>()
           .toList();
 
