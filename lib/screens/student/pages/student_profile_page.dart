@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../services/auth_service.dart';
 import '../../auth/auth_shell_screen.dart';
+import '../../payments_screen.dart';
 
 class StudentProfilePage extends StatelessWidget {
   const StudentProfilePage({super.key});
@@ -73,6 +74,29 @@ class StudentProfilePage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
+          SizedBox(
+            height: 52,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.payment_rounded),
+              label: const Text(
+                'Payments',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0D1B2E),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PaymentsScreen()),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
           SizedBox(
             height: 52,
             child: ElevatedButton.icon(
