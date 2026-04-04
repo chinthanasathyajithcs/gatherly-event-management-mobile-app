@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isEventCreator() {
+      return signedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
+    function isEventCoHost() {
+      return signedIn()
+        && resource.data.coHostIds != null
+        && request.auth.uid in resource.data.coHostIds;
+    }
+
+    // Validation for enum values
+    function isValidApprovalStatus(status) {
+      return status in ['pending', 'accepted', 'rejected'];
+    }
+
+    function isValidStatus(status) {
+      return status in ['pending', 'accepted', 'rejected'];
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      // Users can read their own document
+      allow read: if isOwner(userId);
+      
+      // Admins can read all users (for search/promotion)
+      allow read: if isAdmin();
+      
+      // Any logged-in user can create their own profile
+      allow create: if signedIn() && isOwner(userId);
+      
+      // Users can update their own document
+      allow update: if isOwner(userId);
+      
+      // Only admins can change user roles (for student promotion)
+      allow update: if isAdmin() && 
+        request.resource.data.role in ['admin', 'student'];
+    }
+
+    // EVENTS COLLECTION
+    match /events/{eventId} {
+      // Anyone logged in can read all events
+      allow read: if signedIn();
+      
+      // Create: Must be logged in, set createdBy to self, status must be valid and pending
+      allow create: if signedIn() && 
+        request.resource.data.createdBy == request.auth.uid &&
+        isValidApprovalStatus(request.resource.data.approvalStatus) &&
+        isValidStatus(request.resource.data.status) &&
+        request.resource.data.approvalStatus == 'pending';
+      
+      // Update by ADMIN: Can change approval status and status (with validation)
+      allow update: if isAdmin() && 
+        isValidApprovalStatus(request.resource.data.approvalStatus) &&
+        isValidStatus(request.resource.data.status);
+      
+      // Update by CREATOR/COHOST: Can update event details but NOT approval status
+      allow update: if (isEventCreator() || isEventCoHost()) &&
+        request.resource.data.approvalStatus == resource.data.approvalStatus;
+      
+      // Delete: Only admins can delete
+      allow delete: if isAdmin();
+    }
+  }
+}

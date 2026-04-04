@@ -45,6 +45,7 @@ class EventModel {
   final EventApprovalStatus approvalStatus;
   final String? posterImageUrl;
   final Timestamp? createdAt;
+  final Timestamp? approvalUpdatedAt;
 
   EventModel({
     this.id,
@@ -64,6 +65,7 @@ class EventModel {
     this.approvalStatus = EventApprovalStatus.pending,
     this.posterImageUrl,
     this.createdAt,
+    this.approvalUpdatedAt,
   });
 
   factory EventModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -124,10 +126,13 @@ class EventModel {
           ? null
           : (map['posterImageUrl'] as String?),
       createdAt: map['createdAt'] as Timestamp?,
+      approvalUpdatedAt: map['approvalUpdatedAt'] as Timestamp?,
     );
   }
 
   Map<String, dynamic> toMap() {
+    final statusValue = approvalStatus.value.trim();
+
     return {
       'createdBy': createdBy,
       'coHostIds': coHostIds,
@@ -143,8 +148,8 @@ class EventModel {
       'joinedParticipantIds': joinedParticipantIds,
       'joinedParticipantCount': joinedParticipantCount,
       'description': description,
-      'approvalStatus': approvalStatus.value,
-      'status': approvalStatus.value,
+      'approvalStatus': statusValue,
+      'status': statusValue,
       'posterImageUrl': posterImageUrl,
       'createdAt': FieldValue.serverTimestamp(),
     };
