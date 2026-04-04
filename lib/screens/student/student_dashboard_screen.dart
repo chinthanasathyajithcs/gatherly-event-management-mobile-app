@@ -4,8 +4,6 @@ import 'pages/student_discovery_page.dart';
 import 'pages/student_organize_page.dart';
 import 'pages/student_profile_page.dart';
 import 'pages/student_schedule_page.dart';
-import '../../services/auth_service.dart';
-import '../auth/auth_shell_screen.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
@@ -24,16 +22,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     StudentProfilePage(),
   ];
 
-  Future<void> _signOut(BuildContext context) async {
-    await AuthService().signOut();
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const AuthShellScreen()),
-      (_) => false,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -41,14 +29,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _StudentTopBar(
-              onSignOut: () => _signOut(context),
-              onProfileTap: () {
-                setState(() {
-                  _selectedIndex = 3;
-                });
-              },
-            ),
+            _StudentTopBar(),
             Expanded(
               child: IndexedStack(
                 index: _selectedIndex,
@@ -112,67 +93,60 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 }
 
 class _StudentTopBar extends StatelessWidget {
-  final VoidCallback onSignOut;
-  final VoidCallback onProfileTap;
-
-  const _StudentTopBar({
-    required this.onSignOut,
-    required this.onProfileTap,
-  });
+  const _StudentTopBar({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 12, 14, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.menu_rounded,
-            color: Color(0xFFCB6D22),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
+          // Premium app name with gradient-like accent
+          ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              colors: const [Color(0xFFCB6D22), Color(0xFFF49B3B)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ).createShader(bounds),
+            child: const Text(
               'UniHub',
               style: TextStyle(
-                color: Color(0xFF0D1B2E),
-                fontWeight: FontWeight.w700,
-                fontSize: 24,
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: -0.3,
               ),
             ),
           ),
-          PopupMenuButton<String>(
-            tooltip: 'Account',
-            onSelected: (value) {
-              if (value == 'profile') {
-                onProfileTap();
-                return;
-              }
-              if (value == 'signout') {
-                onSignOut();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem<String>(
-                value: 'profile',
-                child: Text('Open Profile'),
-              ),
-              PopupMenuItem<String>(
-                value: 'signout',
-                child: Text('Sign Out'),
-              ),
-            ],
-            child: const CircleAvatar(
-              radius: 20,
-              backgroundColor: Color(0xFF0D1B2E),
-              child: Icon(
-                Icons.person_rounded,
-                color: Color(0xFFF6F1EB),
+          const Spacer(),
+          // Notification bell with minimal modern style
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFCB6D22).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: IconButton(
+              tooltip: 'Notifications',
+              onPressed: () {
+                // TODO: Implement notifications for events and schedules
+              },
+              padding: const EdgeInsets.all(8),
+              icon: const Icon(
+                Icons.notifications_rounded,
+                color: Color(0xFFCB6D22),
+                size: 22,
               ),
             ),
           ),

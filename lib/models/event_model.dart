@@ -30,6 +30,8 @@ EventApprovalStatus parseEventApprovalStatus(String? raw) {
 class EventModel {
   final String? id;
   final String createdBy;
+  final List<String> coHostIds;
+  final Map<String, String> coHostNamesById;
   final String category;
   final String name;
   final DateTime date;
@@ -47,6 +49,8 @@ class EventModel {
   EventModel({
     this.id,
     required this.createdBy,
+    this.coHostIds = const [],
+    this.coHostNamesById = const {},
     required this.category,
     required this.name,
     required this.date,
@@ -75,9 +79,30 @@ class EventModel {
     final statusRaw =
         map['approvalStatus'] as String? ?? map['status'] as String?;
 
+    final coHostsRaw = map['coHostNamesById'];
+    final coHostNamesById = <String, String>{};
+    if (coHostsRaw is Map) {
+      coHostsRaw.forEach((key, value) {
+        final id = key.toString().trim();
+        final name = value?.toString().trim() ?? '';
+        if (id.isNotEmpty && name.isNotEmpty) {
+          coHostNamesById[id] = name;
+        }
+      });
+    }
+
+    final coHostIds = (map['coHostIds'] as List<dynamic>? ?? const [])
+        .whereType<String>()
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
     return EventModel(
       id: doc.id,
       createdBy: map['createdBy'] as String? ?? '',
+      coHostIds: coHostIds,
+      coHostNamesById: coHostNamesById,
       category: map['category'] as String? ?? '',
       name: map['name'] as String? ?? '',
       date: dateTs.toDate(),
@@ -105,6 +130,8 @@ class EventModel {
   Map<String, dynamic> toMap() {
     return {
       'createdBy': createdBy,
+      'coHostIds': coHostIds,
+      'coHostNamesById': coHostNamesById,
       'category': category,
       'name': name,
       'eventDate': Timestamp.fromDate(date),

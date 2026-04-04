@@ -222,6 +222,133 @@ class AuthService {
     }
   }
 
+  Future<List<UserModel>> searchStudentsByName({
+    required String query,
+    Iterable<String> excludeUserIds = const [],
+    int resultLimit = 10,
+  }) async {
+    final trimmed = _normalizeSearchText(query);
+    if (trimmed.isEmpty) {
+      return const [];
+    }
+
+    final tokens = trimmed
+        .split(' ')
+        .map(_normalizeSearchText)
+        .where((token) => token.isNotEmpty)
+        .toList();
+
+    final excluded = excludeUserIds.map((id) => id.trim()).toSet();
+
+    final docsById = <String, Map<String, dynamic>>{};
+
+    // Prefer role-filtered query for compatibility with stricter rules.
+    try {
+      final filtered = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'student')
+          .limit(200)
+          .get();
+      for (final doc in filtered.docs) {
+        docsById[doc.id] = doc.data();
+      }
+    } on FirebaseException {
+      // Fall back to broader fetch for projects that allow full user reads.
+    }
+
+    if (docsById.isEmpty) {
+      final snapshot = await _firestore.collection('users').limit(200).get();
+      for (final doc in snapshot.docs) {
+        docsById[doc.id] = doc.data();
+      }
+    }
+
+    final ranked = <({UserModel user, int score})>[];
+
+    for (final entry in docsById.entries) {
+      final user = UserModel.fromMap(entry.value, entry.key);
+      if (excluded.contains(user.uid)) continue;
+
+      final normalizedRole = _normalizeSearchText(user.role);
+      if (normalizedRole == 'admin') continue;
+
+      final name = _normalizeSearchText(user.name);
+      final email = _normalizeSearchText(user.email);
+      final studentId = _normalizeSearchText(user.studentId);
+
+      final allTokensMatch = tokens.every(
+        (token) => _tokenMatchesAny(
+          token: token,
+          name: name,
+          email: email,
+          studentId: studentId,
+        ),
+      );
+      if (!allTokensMatch) continue;
+
+      var score = 0;
+      if (name == trimmed) {
+        score += 100;
+      } else if (_startsWithNameWord(name, trimmed)) {
+        score += 85;
+      } else if (name.startsWith(trimmed)) {
+        score += 70;
+      } else if (name.contains(trimmed)) {
+        score += 45;
+      }
+
+      if (email.startsWith(trimmed)) {
+        score += 25;
+      } else if (email.contains(trimmed)) {
+        score += 12;
+      }
+
+      if (studentId.startsWith(trimmed)) {
+        score += 20;
+      } else if (studentId.contains(trimmed)) {
+        score += 8;
+      }
+
+      // Prefer concise names when relevance is the same.
+      score -= name.length ~/ 25;
+      ranked.add((user: user, score: score));
+    }
+
+    ranked.sort((a, b) {
+      final byScore = b.score.compareTo(a.score);
+      if (byScore != 0) return byScore;
+
+      final aName = _normalizeSearchText(a.user.name ?? a.user.email);
+      final bName = _normalizeSearchText(b.user.name ?? b.user.email);
+      return aName.compareTo(bName);
+    });
+
+    return ranked.take(resultLimit).map((item) => item.user).toList();
+  }
+
+  String _normalizeSearchText(String? input) {
+    final raw = (input ?? '').trim().toLowerCase();
+    if (raw.isEmpty) return '';
+    return raw.replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  bool _tokenMatchesAny({
+    required String token,
+    required String name,
+    required String email,
+    required String studentId,
+  }) {
+    if (token.isEmpty) return true;
+    return name.contains(token) ||
+        email.contains(token) ||
+        studentId.contains(token);
+  }
+
+  bool _startsWithNameWord(String name, String query) {
+    if (query.isEmpty || name.isEmpty) return false;
+    return name.split(' ').any((part) => part.startsWith(query));
+  }
+
   String _firebaseErrorMessage(String code) {
     switch (code) {
       case 'invalid-credential':

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../models/event_model.dart';
+import '../../../models/user_model.dart';
+import '../../../services/auth_service.dart';
 import '../../../services/event_service.dart';
 import 'student_event_builder_screen.dart';
 
@@ -55,6 +58,250 @@ class StudentOrganizePage extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hosts section (displays event creator and co-hosts)
+// ---------------------------------------------------------------------------
+
+class _HostsSection extends StatefulWidget {
+  final String createdBy;
+  final List<String> coHostIds;
+  final Map<String, String> coHostNamesById;
+  final AuthService authService;
+
+  const _HostsSection({
+    required this.createdBy,
+    required this.coHostIds,
+    required this.coHostNamesById,
+    required this.authService,
+  });
+
+  @override
+  State<_HostsSection> createState() => _HostsSectionState();
+}
+
+class _HostsSectionState extends State<_HostsSection> {
+  late Map<String, UserModel?> _creatorDetails;
+  late Map<String, UserModel?> _coHostDetails;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _creatorDetails = {};
+    _coHostDetails = {};
+    _loadHostsData();
+  }
+
+  Future<void> _loadHostsData() async {
+    try {
+      // Load creator details
+      final creator = await widget.authService.getUserProfile(widget.createdBy);
+
+      // Load co-host details
+      final coHosts = <String, UserModel?>{};
+      for (final coHostId in widget.coHostIds) {
+        try {
+          final profile = await widget.authService.getUserProfile(coHostId);
+          coHosts[coHostId] = profile;
+        } catch (_) {
+          coHosts[coHostId] = null;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _creatorDetails[widget.createdBy] = creator;
+          _coHostDetails.addAll(coHosts);
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        height: 80,
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFCB6D22)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Build the hosts list
+    final hosts = <Widget>[];
+
+    // Add creator
+    final creator = _creatorDetails[widget.createdBy];
+    hosts.add(
+      _HostTile(
+        name: creator?.name ?? 'Creator',
+        email: creator?.email ?? 'Email unavailable',
+        isCreator: true,
+      ),
+    );
+
+    // Add co-hosts
+    for (final coHostId in widget.coHostIds) {
+      final coHost = _coHostDetails[coHostId];
+      final hostName = widget.coHostNamesById[coHostId] ?? 'Co-host';
+      hosts.add(
+        _HostTile(
+          name: coHost?.name ?? hostName,
+          email: coHost?.email ?? 'Email unavailable',
+          isCreator: false,
+        ),
+      );
+    }
+
+    if (hosts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Organizers',
+          style: TextStyle(
+            color: Color(0xFF0D1B2E),
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0x0F0D1B2E)),
+          ),
+          child: Column(
+            children: hosts,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Host tile widget
+// ---------------------------------------------------------------------------
+
+class _HostTile extends StatelessWidget {
+  final String name;
+  final String email;
+  final bool isCreator;
+
+  const _HostTile({
+    required this.name,
+    required this.email,
+    required this.isCreator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color:
+                  isCreator ? const Color(0xFFFFF4EB) : const Color(0xFFEDF9F0),
+              border: Border.all(
+                color: isCreator
+                    ? const Color(0x30CB6D22)
+                    : const Color(0x302F9E44),
+              ),
+            ),
+            child: Icon(
+              isCreator ? Icons.star_rounded : Icons.person_rounded,
+              size: 20,
+              color:
+                  isCreator ? const Color(0xFFCB6D22) : const Color(0xFF2F9E44),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          color: Color(0xFF1F334A),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isCreator) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF4EB),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Host',
+                          style: TextStyle(
+                            color: Color(0xFFCB6D22),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  email,
+                  style: const TextStyle(
+                    color: Color(0xFF8B919E),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -327,6 +574,7 @@ class _CreatedEventsSection extends StatefulWidget {
 
 class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
   final EventService _eventService = EventService();
+  final AuthService _authService = AuthService();
   bool _showAll = false;
 
   // -- poster editor (upload / remove) kept from original ----
@@ -533,8 +781,18 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
 
   String _formatDate(DateTime date) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
@@ -607,6 +865,7 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
             _openPosterEditor(context, event);
           },
           eventService: _eventService,
+          authService: _authService,
           formatDate: _formatDate,
           formatTime: _formatTime,
           statusLabel: _statusLabel,
@@ -703,8 +962,7 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
                       statusIcon: _statusIcon,
                       statusColor: _statusColor,
                       statusBg: _statusBg,
-                      onTap: () =>
-                          _openEventDetail(context, visibleEvents[i]),
+                      onTap: () => _openEventDetail(context, visibleEvents[i]),
                       onPosterTap: () =>
                           _openPosterEditor(context, visibleEvents[i]),
                     ),
@@ -717,8 +975,7 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Center(
                       child: TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showAll = !_showAll),
+                        onPressed: () => setState(() => _showAll = !_showAll),
                         icon: Icon(
                           _showAll
                               ? Icons.keyboard_arrow_up_rounded
@@ -918,6 +1175,14 @@ class _EventCard extends StatelessWidget {
     required this.onPosterTap,
   });
 
+  String _participantLabel() {
+    if (!event.hasParticipantLimit) {
+      return 'Open event';
+    }
+
+    return '${event.joinedParticipantCount}/${event.attendeeCount ?? '∞'}';
+  }
+
   static const _categoryGradients = {
     'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
     'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
@@ -937,9 +1202,8 @@ class _EventCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette =
-        _categoryGradients[event.category.trim().toLowerCase()] ??
-            const [Color(0xFF374151), Color(0xFF6B7280)];
+    final palette = _categoryGradients[event.category.trim().toLowerCase()] ??
+        const [Color(0xFF374151), Color(0xFF6B7280)];
     final sColor = statusColor(event.approvalStatus);
     final sBg = statusBg(event.approvalStatus);
     final sLabel = statusLabel(event.approvalStatus);
@@ -1051,9 +1315,7 @@ class _EventCard extends StatelessWidget {
                           const SizedBox(width: 10),
                           _MetaChip(
                             icon: Icons.people_outline_rounded,
-                            label: event.hasParticipantLimit
-                                ? '${event.joinedParticipantCount}/${event.attendeeCount ?? '∞'}'
-                                : '${event.joinedParticipantCount} joined',
+                            label: _participantLabel(),
                           ),
                         ],
                       ),
@@ -1099,8 +1361,7 @@ class _EventCard extends StatelessWidget {
               Image.network(
                 event.posterImageUrl!,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    _fallbackGradientHeader(palette),
+                errorBuilder: (_, __, ___) => _fallbackGradientHeader(palette),
               ),
               // Gradient overlay for readability
               Positioned(
@@ -1187,9 +1448,7 @@ class _EventCard extends StatelessWidget {
               right: 18,
               bottom: 10,
               child: Text(
-                event.name.isNotEmpty
-                    ? event.name[0].toUpperCase()
-                    : 'E',
+                event.name.isNotEmpty ? event.name[0].toUpperCase() : 'E',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.18),
                   fontSize: 56,
@@ -1322,10 +1581,11 @@ class _ActionChip extends StatelessWidget {
 // Event detail bottom sheet
 // ---------------------------------------------------------------------------
 
-class _EventDetailSheet extends StatelessWidget {
+class _EventDetailSheet extends StatefulWidget {
   final EventModel event;
   final VoidCallback onUpdatePoster;
   final EventService eventService;
+  final AuthService authService;
   final String Function(DateTime) formatDate;
   final String Function(TimeOfDayData) formatTime;
   final String Function(EventApprovalStatus) statusLabel;
@@ -1337,6 +1597,7 @@ class _EventDetailSheet extends StatelessWidget {
     required this.event,
     required this.onUpdatePoster,
     required this.eventService,
+    required this.authService,
     required this.formatDate,
     required this.formatTime,
     required this.statusLabel,
@@ -1345,6 +1606,11 @@ class _EventDetailSheet extends StatelessWidget {
     required this.statusBg,
   });
 
+  @override
+  State<_EventDetailSheet> createState() => _EventDetailSheetState();
+}
+
+class _EventDetailSheetState extends State<_EventDetailSheet> {
   static const _categoryGradients = {
     'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
     'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
@@ -1363,7 +1629,7 @@ class _EventDetailSheet extends StatelessWidget {
   };
 
   void _openEditSheet(BuildContext context) {
-    if (event.id == null) return;
+    if (widget.event.id == null) return;
 
     showModalBottomSheet(
       context: context,
@@ -1371,10 +1637,10 @@ class _EventDetailSheet extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         return _EditEventSheet(
-          event: event,
-          eventService: eventService,
-          formatDate: formatDate,
-          formatTime: formatTime,
+          event: widget.event,
+          eventService: widget.eventService,
+          formatDate: widget.formatDate,
+          formatTime: widget.formatTime,
         );
       },
     );
@@ -1383,11 +1649,12 @@ class _EventDetailSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette =
-        _categoryGradients[event.category.trim().toLowerCase()] ??
+        _categoryGradients[widget.event.category.trim().toLowerCase()] ??
             const [Color(0xFF374151), Color(0xFF6B7280)];
-    final sColor = statusColor(event.approvalStatus);
-    final sBg = statusBg(event.approvalStatus);
-    final isRejected = event.approvalStatus == EventApprovalStatus.rejected;
+    final sColor = widget.statusColor(widget.event.approvalStatus);
+    final sBg = widget.statusBg(widget.event.approvalStatus);
+    final isRejected =
+        widget.event.approvalStatus == EventApprovalStatus.rejected;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -1423,8 +1690,8 @@ class _EventDetailSheet extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: GestureDetector(
-                    onTap: (event.posterImageUrl != null &&
-                            event.posterImageUrl!.isNotEmpty)
+                    onTap: (widget.event.posterImageUrl != null &&
+                            widget.event.posterImageUrl!.isNotEmpty)
                         ? () {
                             Navigator.of(context).push(
                               PageRouteBuilder(
@@ -1432,11 +1699,10 @@ class _EventDetailSheet extends StatelessWidget {
                                 barrierColor: Colors.transparent,
                                 pageBuilder: (_, __, ___) =>
                                     _FullScreenImageViewer(
-                                  imageUrl: event.posterImageUrl!,
-                                  heroTag: 'detail_poster_${event.id}',
+                                  imageUrl: widget.event.posterImageUrl!,
+                                  heroTag: 'detail_poster_${widget.event.id}',
                                 ),
-                                transitionsBuilder:
-                                    (_, animation, __, child) {
+                                transitionsBuilder: (_, animation, __, child) {
                                   return FadeTransition(
                                     opacity: animation,
                                     child: child,
@@ -1463,25 +1729,15 @@ class _EventDetailSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title + edit button row
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              event.name,
-                              style: const TextStyle(
-                                color: Color(0xFF0D1B2E),
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                                height: 1.15,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          if (event.id != null)
-                            _EditButton(onTap: () => _openEditSheet(context)),
-                        ],
+                      // Title
+                      Text(
+                        widget.event.name,
+                        style: const TextStyle(
+                          color: Color(0xFF0D1B2E),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          height: 1.15,
+                        ),
                       ),
                       const SizedBox(height: 12),
 
@@ -1492,17 +1748,17 @@ class _EventDetailSheet extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: sBg,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: sColor.withValues(alpha: 0.25)),
+                          border:
+                              Border.all(color: sColor.withValues(alpha: 0.25)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(statusIcon(event.approvalStatus),
+                            Icon(widget.statusIcon(widget.event.approvalStatus),
                                 size: 15, color: sColor),
                             const SizedBox(width: 5),
                             Text(
-                              statusLabel(event.approvalStatus),
+                              widget.statusLabel(widget.event.approvalStatus),
                               style: TextStyle(
                                 color: sColor,
                                 fontSize: 13,
@@ -1522,8 +1778,7 @@ class _EventDetailSheet extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: const Color(0xFFFDEDED),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: const Color(0x20D64545)),
+                            border: Border.all(color: const Color(0x20D64545)),
                           ),
                           child: const Row(
                             children: [
@@ -1551,32 +1806,40 @@ class _EventDetailSheet extends StatelessWidget {
                       _DetailTile(
                         icon: Icons.category_rounded,
                         label: 'Category',
-                        value: event.category,
+                        value: widget.event.category,
                         locked: true,
                       ),
                       _DetailTile(
                         icon: Icons.calendar_today_rounded,
                         label: 'Date',
-                        value: formatDate(event.date),
+                        value: widget.formatDate(widget.event.date),
                       ),
                       _DetailTile(
                         icon: Icons.access_time_rounded,
                         label: 'Time',
-                        value: formatTime(event.time),
+                        value: widget.formatTime(widget.event.time),
                       ),
                       _DetailTile(
                         icon: Icons.location_on_outlined,
                         label: 'Location',
-                        value: event.location,
+                        value: widget.event.location,
                       ),
                       _DetailTile(
                         icon: Icons.people_outline_rounded,
                         label: 'Participants',
-                        value: event.hasParticipantLimit
-                            ? '${event.joinedParticipantCount} / ${event.attendeeCount ?? '∞'} joined'
-                            : '${event.joinedParticipantCount} joined (no limit)',
+                        value: widget.event.hasParticipantLimit
+                            ? '${widget.event.joinedParticipantCount} / ${widget.event.attendeeCount ?? '∞'} joined'
+                            : 'Open event',
                       ),
                       const SizedBox(height: 8),
+
+                      _HostsSection(
+                        createdBy: widget.event.createdBy,
+                        coHostIds: widget.event.coHostIds,
+                        coHostNamesById: widget.event.coHostNamesById,
+                        authService: widget.authService,
+                      ),
+                      const SizedBox(height: 20),
 
                       // Description section
                       const Text(
@@ -1594,11 +1857,10 @@ class _EventDetailSheet extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
-                          border:
-                              Border.all(color: const Color(0x0F0D1B2E)),
+                          border: Border.all(color: const Color(0x0F0D1B2E)),
                         ),
                         child: Text(
-                          event.description,
+                          widget.event.description,
                           style: const TextStyle(
                             color: Color(0xFF3A5068),
                             fontSize: 14.5,
@@ -1621,12 +1883,11 @@ class _EventDetailSheet extends StatelessWidget {
                                   side: const BorderSide(
                                       color: Color(0x22CB6D22)),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(14)),
+                                      borderRadius: BorderRadius.circular(14)),
                                 ),
-                                onPressed: onUpdatePoster,
-                                icon: const Icon(Icons.image_outlined,
-                                    size: 19),
+                                onPressed: widget.onUpdatePoster,
+                                icon:
+                                    const Icon(Icons.image_outlined, size: 19),
                                 label: const Text(
                                   'Poster',
                                   style: TextStyle(
@@ -1645,14 +1906,12 @@ class _EventDetailSheet extends StatelessWidget {
                                 style: FilledButton.styleFrom(
                                   backgroundColor: const Color(0xFFCB6D22),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(14)),
+                                      borderRadius: BorderRadius.circular(14)),
                                 ),
-                                onPressed: event.id != null
+                                onPressed: widget.event.id != null
                                     ? () => _openEditSheet(context)
                                     : null,
-                                icon: const Icon(Icons.edit_outlined,
-                                    size: 19),
+                                icon: const Icon(Icons.edit_outlined, size: 19),
                                 label: const Text(
                                   'Edit Details',
                                   style: TextStyle(
@@ -1677,9 +1936,10 @@ class _EventDetailSheet extends StatelessWidget {
   }
 
   Widget _buildDetailPoster(List<Color> palette) {
-    if (event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty) {
+    if (widget.event.posterImageUrl != null &&
+        widget.event.posterImageUrl!.isNotEmpty) {
       return Hero(
-        tag: 'detail_poster_${event.id}',
+        tag: 'detail_poster_${widget.event.id}',
         child: SizedBox(
           height: 200,
           width: double.infinity,
@@ -1687,10 +1947,9 @@ class _EventDetailSheet extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               Image.network(
-                event.posterImageUrl!,
+                widget.event.posterImageUrl!,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    _fallbackDetailGradient(palette),
+                errorBuilder: (_, __, ___) => _fallbackDetailGradient(palette),
               ),
               Positioned(
                 bottom: 0,
@@ -1713,7 +1972,7 @@ class _EventDetailSheet extends StatelessWidget {
               Positioned(
                 top: 12,
                 left: 14,
-                child: _CategoryBadge(label: event.category),
+                child: _CategoryBadge(label: widget.event.category),
               ),
               // Expand hint icon
               Positioned(
@@ -1781,14 +2040,14 @@ class _EventDetailSheet extends StatelessWidget {
           Positioned(
             top: 12,
             left: 14,
-            child: _CategoryBadge(label: event.category),
+            child: _CategoryBadge(label: widget.event.category),
           ),
           Positioned(
             right: 20,
             bottom: 14,
             child: Text(
-              event.name.isNotEmpty
-                  ? event.name[0].toUpperCase()
+              widget.event.name.isNotEmpty
+                  ? widget.event.name[0].toUpperCase()
                   : 'E',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.15),
@@ -1880,49 +2139,6 @@ class _DetailTile extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Edit button
-// ---------------------------------------------------------------------------
-
-class _EditButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _EditButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF4EB),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0x20CB6D22)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.edit_outlined, size: 15, color: Color(0xFFCB6D22)),
-              SizedBox(width: 5),
-              Text(
-                'Edit',
-                style: TextStyle(
-                  color: Color(0xFFCB6D22),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Edit event sheet
 // ---------------------------------------------------------------------------
 
@@ -1944,12 +2160,24 @@ class _EditEventSheet extends StatefulWidget {
 }
 
 class _EditEventSheetState extends State<_EditEventSheet> {
-  late DateTime _date;
-  late TimeOfDay _time;
-  late TextEditingController _locationCtrl;
-  late TextEditingController _descriptionCtrl;
-  late TextEditingController _attendeesCtrl;
-  late bool _hasParticipantLimit;
+  final AuthService _authService = AuthService();
+
+  DateTime _date = DateTime.now();
+  TimeOfDay _time = TimeOfDay.now();
+  final TextEditingController _locationCtrl = TextEditingController();
+  final TextEditingController _descriptionCtrl = TextEditingController();
+  final TextEditingController _attendeesCtrl = TextEditingController();
+  final TextEditingController _hostSearchCtrl = TextEditingController();
+  final FocusNode _hostSearchFocus = FocusNode();
+  bool _hasParticipantLimit = false;
+  Map<String, String> _coHostNamesById = <String, String>{};
+  Map<String, String> _coHostDetailsById = <String, String>{};
+  List<UserModel> _hostSearchResults = const [];
+  bool _hostSearchHasQueried = false;
+  bool _searchingHosts = false;
+  Timer? _hostSearchDebounce;
+  int _hostSearchToken = 0;
+  String? _hostSearchError;
   bool _saving = false;
 
   bool get _isRejected =>
@@ -1964,11 +2192,46 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     _date = widget.event.date;
     _time = TimeOfDay(
         hour: widget.event.time.hour, minute: widget.event.time.minute);
-    _locationCtrl = TextEditingController(text: widget.event.location);
-    _descriptionCtrl = TextEditingController(text: widget.event.description);
-    _attendeesCtrl = TextEditingController(
-        text: widget.event.attendeeCount?.toString() ?? '');
+    _locationCtrl.text = widget.event.location;
+    _descriptionCtrl.text = widget.event.description;
+    _attendeesCtrl.text = widget.event.attendeeCount?.toString() ?? '';
     _hasParticipantLimit = widget.event.hasParticipantLimit;
+    _coHostNamesById = Map<String, String>.from(widget.event.coHostNamesById);
+    for (final id in widget.event.coHostIds) {
+      _coHostNamesById.putIfAbsent(id, () => 'Host');
+      _coHostDetailsById.putIfAbsent(id, () => 'Loading email...');
+    }
+
+    _hydrateCoHostEmails();
+  }
+
+  Future<void> _hydrateCoHostEmails() async {
+    final ids = _coHostNamesById.keys.toList();
+    if (ids.isEmpty) return;
+
+    final entries = await Future.wait(
+      ids.map((id) async {
+        try {
+          final profile = await _authService.getUserProfile(id);
+          final email = profile?.email.trim() ?? '';
+          if (email.isNotEmpty) {
+            return MapEntry(id, email);
+          }
+          return const MapEntry('', '');
+        } catch (_) {
+          return const MapEntry('', '');
+        }
+      }),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      for (final entry in entries) {
+        if (entry.key.isEmpty) continue;
+        _coHostDetailsById[entry.key] = entry.value;
+      }
+    });
   }
 
   @override
@@ -1976,7 +2239,92 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     _locationCtrl.dispose();
     _descriptionCtrl.dispose();
     _attendeesCtrl.dispose();
+    _hostSearchCtrl.dispose();
+    _hostSearchFocus.dispose();
+    _hostSearchDebounce?.cancel();
     super.dispose();
+  }
+
+  void _onHostQueryChanged(String value) {
+    _hostSearchDebounce?.cancel();
+    _hostSearchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _searchHosts();
+    });
+  }
+
+  Future<void> _searchHosts() async {
+    final query = _hostSearchCtrl.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _hostSearchHasQueried = false;
+        _hostSearchResults = const [];
+        _hostSearchError = null;
+      });
+      return;
+    }
+
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    final requestToken = ++_hostSearchToken;
+
+    setState(() {
+      _searchingHosts = true;
+      _hostSearchError = null;
+    });
+    try {
+      final results = await _authService.searchStudentsByName(
+        query: query,
+        excludeUserIds: {
+          widget.event.createdBy,
+          ..._coHostNamesById.keys,
+          if (currentUid != null) currentUid,
+        },
+      );
+      if (!mounted) return;
+      if (requestToken != _hostSearchToken) return;
+      setState(() {
+        _hostSearchHasQueried = true;
+        _hostSearchResults = results;
+        _hostSearchError = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _hostSearchHasQueried = true;
+          _hostSearchResults = const [];
+          _hostSearchError =
+              'Could not load suggestions. Check Firestore rules for users read access.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _searchingHosts = false);
+    }
+  }
+
+  void _addCoHost(UserModel user) {
+    final resolvedName = (user.name?.trim().isNotEmpty ?? false)
+        ? user.name!.trim()
+        : user.email;
+    final email = user.email.trim();
+
+    setState(() {
+      _coHostNamesById[user.uid] = resolvedName;
+      _coHostDetailsById[user.uid] =
+          email.isNotEmpty ? email : 'Email unavailable';
+      _hostSearchCtrl.clear();
+      _hostSearchHasQueried = false;
+      _hostSearchResults = const [];
+      _hostSearchError = null;
+    });
+    _hostSearchFocus.unfocus();
+  }
+
+  void _removeCoHost(String uid) {
+    setState(() {
+      _coHostNamesById.remove(uid);
+      _coHostDetailsById.remove(uid);
+    });
   }
 
   Future<void> _pickDate() async {
@@ -2036,6 +2384,8 @@ class _EditEventSheetState extends State<_EditEventSheet> {
         hasParticipantLimit: _canEditAttendees ? _hasParticipantLimit : null,
         attendeeCount:
             (_canEditAttendees && _hasParticipantLimit) ? attendees : null,
+        coHostIds: _coHostNamesById.keys.toList(),
+        coHostNamesById: _coHostNamesById,
         resetApproval: resubmit,
       );
 
@@ -2256,6 +2606,260 @@ class _EditEventSheetState extends State<_EditEventSheet> {
               const SizedBox(height: 18),
             ],
 
+            // Editable: Co-hosts
+            _sectionLabel('Co-hosts'),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0x120D1B2E)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Search by name and tap a suggestion to add co-hosts.',
+                    style: TextStyle(
+                      color: Color(0xFF5B6C80),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _hostSearchCtrl,
+                    focusNode: _hostSearchFocus,
+                    onChanged: _onHostQueryChanged,
+                    onSubmitted: (_) => _searchHosts(),
+                    decoration: InputDecoration(
+                      hintText: 'Type a student name',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: _searchingHosts ? null : _searchHosts,
+                        icon: _searchingHosts
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.arrow_forward_rounded),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0x190D1B2E)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0x190D1B2E)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFCB6D22)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_coHostNamesById.isEmpty)
+                    const Text(
+                      'No co-hosts selected yet.',
+                      style: TextStyle(
+                        color: Color(0xFF8A97A8),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8F2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0x20CB6D22)),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _coHostNamesById.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final entries = _coHostNamesById.entries.toList();
+                          final entry = entries[index];
+
+                          return ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: const Color(0xFFFFE9D6),
+                              child: Text(
+                                entry.value.isNotEmpty
+                                    ? entry.value[0].toUpperCase()
+                                    : 'S',
+                                style: const TextStyle(
+                                  color: Color(0xFFCB6D22),
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              entry.value,
+                              style: const TextStyle(
+                                color: Color(0xFF1F334A),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                            subtitle: Text(
+                              _coHostDetailsById[entry.key] ??
+                                  'Email unavailable',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF6A7C90),
+                                fontSize: 11.8,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Remove co-host',
+                              onPressed: () => _removeCoHost(entry.key),
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Color(0xFFD64545),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_hostSearchCtrl.text.trim().isEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Start typing a name to get suggestions.',
+                      style: TextStyle(
+                        color: Color(0xFF8A97A8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    if (_searchingHosts)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    else if (_hostSearchError != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          _hostSearchError!,
+                          style: const TextStyle(
+                            color: Color(0xFFD64545),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else if (_hostSearchHasQueried &&
+                        _hostSearchResults.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          'No matching students found.',
+                          style: TextStyle(
+                            color: Color(0xFF8A97A8),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      )
+                    else if (_hostSearchResults.isNotEmpty)
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0x140D1B2E)),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _hostSearchResults.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final candidate = _hostSearchResults[index];
+                            final title =
+                                (candidate.name?.trim().isNotEmpty ?? false)
+                                    ? candidate.name!.trim()
+                                    : candidate.email;
+                            final subtitle =
+                                candidate.name?.trim().isNotEmpty == true
+                                    ? candidate.email
+                                    : candidate.studentId;
+
+                            return Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _addCoHost(candidate),
+                                child: ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    radius: 15,
+                                    backgroundColor: const Color(0xFFFFF1E6),
+                                    child: Text(
+                                      title.isNotEmpty
+                                          ? title[0].toUpperCase()
+                                          : 'S',
+                                      style: const TextStyle(
+                                        color: Color(0xFFCB6D22),
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    title,
+                                    style: const TextStyle(
+                                      color: Color(0xFF1F334A),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                  subtitle: subtitle == null || subtitle.isEmpty
+                                      ? null
+                                      : Text(
+                                          subtitle,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                  trailing: const Icon(
+                                    Icons.add_circle_rounded,
+                                    color: Color(0xFF2F9E44),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+
             // Editable: Description
             _sectionLabel('Description'),
             const SizedBox(height: 8),
@@ -2263,7 +2867,9 @@ class _EditEventSheetState extends State<_EditEventSheet> {
               controller: _descriptionCtrl,
               hint: 'Event description',
               icon: Icons.notes_rounded,
-              maxLines: 4,
+              minLines: 3,
+              maxLines: 8,
+              keyboardType: TextInputType.multiline,
             ),
             const SizedBox(height: 24),
 
@@ -2288,7 +2894,9 @@ class _EditEventSheetState extends State<_EditEventSheet> {
                         )
                       : const Icon(Icons.send_rounded, size: 19),
                   label: Text(
-                    _saving ? 'Resubmitting...' : 'Save & Resubmit for Approval',
+                    _saving
+                        ? 'Resubmitting...'
+                        : 'Save & Resubmit for Approval',
                     style: const TextStyle(
                       fontSize: 14.5,
                       fontWeight: FontWeight.w700,
@@ -2425,19 +3033,23 @@ class _StyledTextField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final IconData icon;
-  final int maxLines;
+  final int minLines;
+  final int? maxLines;
   final TextInputType keyboardType;
 
   const _StyledTextField({
     required this.controller,
     required this.hint,
     required this.icon,
+    this.minLines = 1,
     this.maxLines = 1,
     this.keyboardType = TextInputType.text,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isMultiline = minLines > 1 || (maxLines ?? 1) > 1;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -2453,8 +3065,11 @@ class _StyledTextField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
+        minLines: minLines,
         maxLines: maxLines,
         keyboardType: keyboardType,
+        textAlignVertical:
+            isMultiline ? TextAlignVertical.top : TextAlignVertical.center,
         cursorColor: const Color(0xFFCB6D22),
         style: const TextStyle(
           color: Color(0xFF1F334A),
@@ -2462,7 +3077,15 @@ class _StyledTextField extends StatelessWidget {
           fontWeight: FontWeight.w600,
         ),
         decoration: InputDecoration(
-          prefixIcon: Icon(icon, size: 20, color: const Color(0xFFCB6D22)),
+          alignLabelWithHint: isMultiline,
+          prefixIcon: Padding(
+            padding: EdgeInsets.only(top: isMultiline ? 12 : 0),
+            child: Icon(icon, size: 20, color: const Color(0xFFCB6D22)),
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 48,
+            minHeight: 44,
+          ),
           hintText: hint,
           hintStyle: const TextStyle(
             color: Color(0xFFB8ADA0),
@@ -2536,7 +3159,6 @@ class _EditPickerButton extends StatelessWidget {
     );
   }
 }
-
 
 // ---------------------------------------------------------------------------
 // Full-screen image viewer with pinch-to-zoom
@@ -2655,8 +3277,8 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer>
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
                   child: const Icon(
                     Icons.close_rounded,

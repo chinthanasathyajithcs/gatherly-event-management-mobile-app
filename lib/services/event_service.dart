@@ -9,17 +9,51 @@ class EventService {
       _firestore.collection('events');
 
   Stream<List<EventModel>> streamUserEvents(String uid) {
-    return _events.where('createdBy', isEqualTo: uid).snapshots().map(
-      (snapshot) {
-        final events = snapshot.docs.map(EventModel.fromDoc).toList();
+    final createdStream =
+        _events.where('createdBy', isEqualTo: uid).snapshots();
+    final coHostedStream =
+        _events.where('coHostIds', arrayContains: uid).snapshots();
+
+    return Stream.multi((controller) {
+      var createdDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+      var coHostedDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+      void emitMerged() {
+        final unique = <String, EventModel>{};
+        for (final doc in [...createdDocs, ...coHostedDocs]) {
+          unique[doc.id] = EventModel.fromDoc(doc);
+        }
+
+        final events = unique.values.toList();
         events.sort((a, b) {
           final aTime = a.createdAt?.toDate() ?? DateTime(2000);
           final bTime = b.createdAt?.toDate() ?? DateTime(2000);
           return bTime.compareTo(aTime);
         });
-        return events;
-      },
-    );
+        controller.add(events);
+      }
+
+      final createdSub = createdStream.listen(
+        (snapshot) {
+          createdDocs = snapshot.docs;
+          emitMerged();
+        },
+        onError: controller.addError,
+      );
+
+      final coHostedSub = coHostedStream.listen(
+        (snapshot) {
+          coHostedDocs = snapshot.docs;
+          emitMerged();
+        },
+        onError: controller.addError,
+      );
+
+      controller.onCancel = () async {
+        await createdSub.cancel();
+        await coHostedSub.cancel();
+      };
+    });
   }
 
   Future<void> createEvent(EventModel event) async {
@@ -68,6 +102,8 @@ class EventService {
     String? description,
     bool? hasParticipantLimit,
     int? attendeeCount,
+    List<String>? coHostIds,
+    Map<String, String>? coHostNamesById,
     bool resetApproval = false,
   }) async {
     final updates = <String, dynamic>{};
@@ -93,6 +129,12 @@ class EventService {
     }
     if (attendeeCount != null) {
       updates['attendeeCount'] = attendeeCount;
+    }
+    if (coHostIds != null) {
+      updates['coHostIds'] = coHostIds;
+    }
+    if (coHostNamesById != null) {
+      updates['coHostNamesById'] = coHostNamesById;
     }
     if (resetApproval) {
       updates['approvalStatus'] = EventApprovalStatus.pending.value;
