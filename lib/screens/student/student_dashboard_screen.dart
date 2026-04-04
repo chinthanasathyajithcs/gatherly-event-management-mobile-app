@@ -6,21 +6,31 @@ import 'pages/student_profile_page.dart';
 import 'pages/student_schedule_page.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
-  const StudentDashboardScreen({super.key});
+  final int initialIndex;
+
+  const StudentDashboardScreen({super.key, this.initialIndex = 0});
 
   @override
   State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
 }
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
 
-  static const List<Widget> _pages = [
-    StudentDiscoveryPage(),
-    StudentSchedulePage(),
-    StudentOrganizePage(),
-    StudentProfilePage(),
-  ];
+  List<Widget> get _pages => [
+        StudentDiscoveryPage(
+          onOpenOrganize: () => setState(() => _selectedIndex = 2),
+        ),
+        const StudentSchedulePage(),
+        const StudentOrganizePage(),
+        const StudentProfilePage(),
+      ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -173,8 +183,8 @@ class _StudentBottomNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color activeColor = const Color(0xFFEA6A1A);
-    final Color inactiveColor = const Color(0xFF738196);
+    const Color activeColor = Color(0xFFEA6A1A);
+    const Color inactiveColor = Color(0xFF738196);
 
     return Expanded(
       child: InkWell(
