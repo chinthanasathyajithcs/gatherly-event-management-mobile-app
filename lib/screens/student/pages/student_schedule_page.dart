@@ -12,22 +12,45 @@ class StudentSchedulePage extends StatefulWidget {
 
 class _StudentSchedulePageState extends State<StudentSchedulePage> {
   DateTime _focusedDay = DateTime.now();
-  DateTime? _selectedDay;
+  DateTime _selectedDay = DateTime.now();
+  String? _uid;
 
-  late String uid;
-
-  // 🔥 controls filtering
+  // Controls filtering
   bool isDateSelected = false;
 
   @override
   void initState() {
     super.initState();
-    uid = FirebaseAuth.instance.currentUser!.uid;
-    _selectedDay = DateTime.now();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+  }
+
+  DateTime? _parseEventDate(Map<String, dynamic> data) {
+    final rawDate = data['eventDate'];
+
+    if (rawDate is Timestamp) {
+      return rawDate.toDate();
+    }
+
+    if (rawDate is DateTime) {
+      return rawDate;
+    }
+
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final uid = _uid;
+
+    if (uid == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text("My Schedule")),
+        body: const Center(
+          child: Text("Please sign in to view your schedule."),
+        ),
+      );
+    }
+
     final stream = FirebaseFirestore.instance
         .collection('events')
         .where('joinedParticipantIds', arrayContains: uid)
@@ -68,7 +91,7 @@ class _StudentSchedulePageState extends State<StudentSchedulePage> {
           // 📌 TITLE
           Text(
             isDateSelected
-                ? "Events on ${_selectedDay!.toString().substring(0, 10)}"
+                ? "Events on ${_selectedDay.toString().substring(0, 10)}"
                 : "All My Events",
             style: const TextStyle(
               fontSize: 16,
@@ -80,7 +103,7 @@ class _StudentSchedulePageState extends State<StudentSchedulePage> {
 
           // 📋 EVENTS LIST
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: stream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -93,27 +116,24 @@ class _StudentSchedulePageState extends State<StudentSchedulePage> {
 
                 final docs = snapshot.data!.docs;
 
-                List<QueryDocumentSnapshot> filteredDocs;
+                List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredDocs;
 
                 if (isDateSelected) {
-                  // 🔥 FIXED DATE FILTER (NO TIMEZONE ISSUE)
+                  // Filter events to the selected day.
                   filteredDocs = docs.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
+                    final data = doc.data();
 
-                    if (data['eventDate'] == null) return false;
+                    final eventDate = _parseEventDate(data);
+                    if (eventDate == null) return false;
 
-                    final eventDate = (data['eventDate'] as Timestamp).toDate();
-
-                    return eventDate.year == _selectedDay!.year &&
-                        eventDate.month == _selectedDay!.month &&
-                        eventDate.day == _selectedDay!.day;
+                    return eventDate.year == _selectedDay.year &&
+                        eventDate.month == _selectedDay.month &&
+                        eventDate.day == _selectedDay.day;
                   }).toList();
                 } else {
-                  // 🔥 SHOW ALL EVENTS
-                  filteredDocs = docs;
+                  filteredDocs = List.from(docs);
                 }
 
-                // 🔥 EMPTY STATE
                 if (filteredDocs.isEmpty) {
                   return Center(
                     child: Text(
@@ -124,35 +144,43 @@ class _StudentSchedulePageState extends State<StudentSchedulePage> {
                   );
                 }
 
-                // 🔥 SORT EVENTS BY TIME
                 filteredDocs.sort((a, b) {
-                  final aDate = (a['eventDate'] as Timestamp).toDate();
-                  final bDate = (b['eventDate'] as Timestamp).toDate();
+                  final aData = a.data();
+                  final bData = b.data();
+                  final aDate = _parseEventDate(aData);
+                  final bDate = _parseEventDate(bData);
+
+                  if (aDate == null && bDate == null) return 0;
+                  if (aDate == null) return 1;
+                  if (bDate == null) return -1;
+
                   return aDate.compareTo(bDate);
                 });
 
                 return ListView.builder(
                   itemCount: filteredDocs.length,
                   itemBuilder: (context, index) {
-                    final data =
-                        filteredDocs[index].data() as Map<String, dynamic>;
-
-                    final eventDate = (data['eventDate'] as Timestamp).toDate();
+                    final data = filteredDocs[index].data();
+                    final eventDate = _parseEventDate(data);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       child: ListTile(
                         title: Text(
-                          data['name'] ?? 'No Title',
+                          data['name']?.toString() ?? 'No Title',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text("📂 ${data['category'] ?? ''}"),
-                            Text("📍 ${data['location'] ?? ''}"),
-                            Text("⏰ ${eventDate.toString().substring(11, 16)}"),
+                            Text("📂 ${data['category']?.toString() ?? ''}"),
+                            Text("📍 ${data['location']?.toString() ?? ''}"),
+                            Text(
+                              eventDate == null
+                                  ? "⏰ Time TBA"
+                                  : "⏰ ${eventDate.toString().substring(11, 16)}",
+                            ),
                           ],
                         ),
                       ),
