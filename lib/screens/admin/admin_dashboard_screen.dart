@@ -6,6 +6,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/event_service.dart';
 import '../auth/auth_shell_screen.dart';
+import '../club.dart';
 import '../student/student_dashboard_screen.dart';
 
 String _formatDate(DateTime date) {
@@ -248,6 +249,14 @@ class AdminDashboardScreen extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ClubScreen()),
+          ),
+          child: const Icon(Icons.add),
+          backgroundColor: const Color(0xFFCB6D22),
         ),
       ),
     );
