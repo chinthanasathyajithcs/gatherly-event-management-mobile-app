@@ -1,7 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../models/event_model.dart';
 
@@ -1628,6 +1634,136 @@ class _PosterPreviewPage extends StatelessWidget {
     required this.heroTag,
   });
 
+  Future<Uint8List> _fetchPosterBytes() async {
+    final uri = Uri.tryParse(imageUrl);
+    if (uri == null) {
+      throw Exception('Invalid poster URL.');
+    }
+
+    final response = await http.get(uri);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to fetch image: ${response.statusCode}');
+    }
+    if (response.bodyBytes.isEmpty) {
+      throw Exception('Downloaded image is empty.');
+    }
+
+    return response.bodyBytes;
+  }
+
+  Future<void> _downloadPoster(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+
+    try {
+      if (Theme.of(context).platform == TargetPlatform.windows ||
+          Theme.of(context).platform == TargetPlatform.linux ||
+          Theme.of(context).platform == TargetPlatform.fuchsia) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Poster download is not supported on this platform.'),
+          ),
+        );
+        return;
+      }
+
+      final hasAccess = await Gal.hasAccess(toAlbum: true);
+      final granted = hasAccess ? true : await Gal.requestAccess(toAlbum: true);
+
+      if (!granted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Storage access was denied. Unable to download.'),
+          ),
+        );
+        return;
+      }
+
+      final uri = Uri.tryParse(imageUrl);
+      if (uri == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Invalid poster URL.')),
+        );
+        return;
+      }
+
+      final posterBytes = await _fetchPosterBytes();
+
+      final now = DateTime.now();
+      final name =
+          'unihub_poster_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+
+      try {
+        await Gal.putImageBytes(
+          posterBytes,
+          album: 'UniHub',
+          name: name,
+        );
+      } catch (_) {
+        // Some devices reject album writes even when general access is granted.
+        // Fallback to default gallery location to avoid total failure.
+        await Gal.putImageBytes(
+          posterBytes,
+          name: name,
+        );
+      }
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Poster downloaded to your gallery.')),
+      );
+    } on MissingPluginException {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Download plugin not initialized. Fully stop the app and run it again.',
+          ),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sharePoster(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+
+    try {
+      final posterBytes = await _fetchPosterBytes();
+      final now = DateTime.now();
+      final fileName =
+          'unihub_poster_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}.jpg';
+
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(posterBytes, flush: true);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'Check out this event poster from UniHub.',
+          title: 'Share Poster',
+        ),
+      );
+    } on MissingPluginException {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Share plugin not initialized. Fully stop the app and run it again.',
+          ),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Share failed: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1637,6 +1773,18 @@ class _PosterPreviewPage extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Share poster',
+            onPressed: () => _sharePoster(context),
+            icon: const Icon(Icons.share_rounded),
+          ),
+          IconButton(
+            tooltip: 'Download poster',
+            onPressed: () => _downloadPoster(context),
+            icon: const Icon(Icons.download_rounded),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Center(

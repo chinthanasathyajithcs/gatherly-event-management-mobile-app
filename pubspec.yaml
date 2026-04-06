@@ -32,6 +32,10 @@ dependencies:
 
   # Calendar (YOUR FEATURE)
   table_calendar: ^3.0.9
+  http: ^1.6.0
+  gal: ^2.3.2
+  share_plus: ^12.0.2
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
