@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
@@ -10,6 +11,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../models/event_model.dart';
+import '../../widgets/event_card.dart';
+import 'student_qna_screen.dart';
 
 const Color _bgColor = Color(0xFFF6F1EB);
 const Color _cardColor = Color(0xFFFFFFFF);
@@ -104,8 +107,14 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
 
   bool _isLive(EventModel event, DateTime now) {
     final start = _start(event);
-    final end = start.add(const Duration(hours: 2));
+    final end = start.add(Duration(hours: event.durationHours));
     return now.isAfter(start) && now.isBefore(end);
+  }
+
+  bool _isEnded(EventModel event, DateTime now) {
+    final start = _start(event);
+    final end = start.add(Duration(hours: event.durationHours));
+    return now.isAfter(end);
   }
 
   String _dateText(DateTime dateTime) {
@@ -429,6 +438,11 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
               .toList()
             ..sort((a, b) => _start(a).compareTo(_start(b)));
 
+          final endedEvents = filteredEvents
+              .where((event) => _isEnded(event, now))
+              .toList()
+            ..sort((a, b) => _start(b).compareTo(_start(a)));
+
           final tomorrow = DateTime(now.year, now.month, now.day + 1);
           final tomorrowEvents = upcomingEvents.where((event) {
             final eventStart = _start(event);
@@ -484,7 +498,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                   ...filteredEvents.map(
                         (event) => Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: _UpcomingEventCard(
+                          child: EventCard(
                             event: event,
                             scheduleText: _upcomingScheduleText(event, now),
                             categoryColor: _upcomingBadgeColor(event.category),
@@ -585,7 +599,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                 ...personalizedEvents.take(4).map(
                       (event) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _UpcomingEventCard(
+                        child: EventCard(
                           event: event,
                           scheduleText: _upcomingScheduleText(event, now),
                           categoryColor: _upcomingBadgeColor(event.category),
@@ -604,7 +618,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
               _dottedDivider(),
               const SizedBox(height: 24),
               
-              _sectionHeader('All Events', 'DISCOVER MORE'),
+              _sectionHeader('All Upcoming Events', 'DISCOVER MORE'),
               const SizedBox(height: 14),
               if (upcomingEvents.isEmpty)
                 _emptyState(
@@ -615,7 +629,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                 ...upcomingEvents.map(
                       (event) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _UpcomingEventCard(
+                        child: EventCard(
                           event: event,
                           scheduleText: _upcomingScheduleText(event, now),
                           categoryColor: _upcomingBadgeColor(event.category),
@@ -626,6 +640,37 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                               ),
                             );
                           },
+                        ),
+                      ),
+                    ),
+              const SizedBox(height: 10),
+              _dottedDivider(),
+              const SizedBox(height: 24),
+              _sectionHeader('Ended Events', 'PAST'),
+              const SizedBox(height: 14),
+              if (endedEvents.isEmpty)
+                _emptyState(
+                  'No ended events yet.',
+                  icon: Icons.history_rounded,
+                )
+              else
+                ...endedEvents.map(
+                      (event) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Opacity(
+                          opacity: 0.65,
+                          child: EventCard(
+                            event: event,
+                            scheduleText: 'Ended',
+                            categoryColor: _upcomingBadgeColor(event.category),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => _EventDetailsPage(event: event),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -830,8 +875,10 @@ class _FeaturedEventCard extends StatelessWidget {
         event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
     return GestureDetector(
       onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Event details coming soon')),
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => _EventDetailsPage(event: event),
+          ),
         );
       },
       child: ClipRRect(
@@ -1337,171 +1384,90 @@ class _TomorrowEmptyCard extends StatelessWidget {
   }
 }
 
-class _UpcomingEventCard extends StatelessWidget {
-  final EventModel event;
-  final String scheduleText;
-  final Color categoryColor;
-  final VoidCallback onTap;
 
-  const _UpcomingEventCard({
-    required this.event,
-    required this.scheduleText,
-    required this.categoryColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPoster =
-        event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
-    final isAllocatedEvent =
-        event.hasParticipantLimit && (event.attendeeCount ?? 0) > 0;
-    final joinedText =
-        '${event.joinedParticipantCount}/${event.attendeeCount ?? event.joinedParticipantCount} has joined';
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(28),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0E0D1B2E),
-                blurRadius: 18,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: SizedBox(
-                  width: 72,
-                  height: 72,
-                  child: hasPoster
-                      ? Image.network(event.posterImageUrl!, fit: BoxFit.cover)
-                      : Container(
-                          color: categoryColor.withValues(alpha: 0.12),
-                          child: Icon(Icons.event_rounded,
-                              color: categoryColor, size: 28),
-                        ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: categoryColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            event.category.toUpperCase(),
-                            style: TextStyle(
-                              color: categoryColor,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.1,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          '|',
-                          style:
-                              TextStyle(color: Color(0xFFB79D87), fontSize: 12),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            event.location,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _textMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      event.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textDark,
-                        fontSize: 18,
-                        height: 1.05,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      children: [
-                        Text(
-                          scheduleText,
-                          style: const TextStyle(
-                            color: _textMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (isAllocatedEvent) ...[
-                          const Text(
-                            '•',
-                            style: TextStyle(
-                              color: Color(0xFFB79D87),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Text(
-                            joinedText,
-                            style: const TextStyle(
-                              color: _textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EventDetailsPage extends StatelessWidget {
+class _EventDetailsPage extends StatefulWidget {
   final EventModel event;
 
   const _EventDetailsPage({required this.event});
+
+  @override
+  State<_EventDetailsPage> createState() => _EventDetailsPageState();
+}
+
+class _EventDetailsPageState extends State<_EventDetailsPage> {
+  final TextEditingController _feedbackController = TextEditingController();
+  bool _sendingFeedback = false;
+
+  EventModel get event => widget.event;
+
+  @override
+  void dispose() {
+    _feedbackController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitFeedback() async {
+    final text = _feedbackController.text.trim();
+    final user = FirebaseAuth.instance.currentUser;
+    if (text.isEmpty || user == null) return;
+
+    setState(() => _sendingFeedback = true);
+    _feedbackController.clear();
+
+    final senderName =
+        user.displayName ?? user.email?.split('@').first ?? 'Student';
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('events')
+          .doc(event.id)
+          .collection('feedback')
+          .add({
+        'senderId': user.uid,
+        'senderName': senderName,
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
+        'likedBy': <String>[],
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to post feedback: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sendingFeedback = false);
+    }
+  }
+
+  Future<void> _toggleLike(
+      String docId, bool currentlyLiked, String uid) async {
+    if (uid.isEmpty) return;
+    final ref = FirebaseFirestore.instance
+        .collection('events')
+        .doc(event.id)
+        .collection('feedback')
+        .doc(docId);
+
+    if (currentlyLiked) {
+      await ref.update({
+        'likedBy': FieldValue.arrayRemove([uid]),
+      });
+    } else {
+      await ref.update({
+        'likedBy': FieldValue.arrayUnion([uid]),
+      });
+    }
+  }
+
+  String _timeAgoText(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+  }
 
   void _openPosterPreview(BuildContext context) {
     final posterUrl = event.posterImageUrl;
@@ -1563,7 +1529,13 @@ class _EventDetailsPage extends StatelessWidget {
     final venue = event.location.trim().isEmpty ? 'TBA' : event.location;
     final isAllocatedEvent =
         event.hasParticipantLimit && (event.attendeeCount ?? 0) > 0;
-
+    
+    final now = DateTime.now();
+    final start = _start(event);
+    final end = start.add(Duration(hours: event.durationHours));
+    final isLive = now.isAfter(start) && now.isBefore(end);
+    final isEnded = now.isAfter(end);
+    
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
@@ -1756,6 +1728,10 @@ class _EventDetailsPage extends StatelessWidget {
                           _DetailItem(
                               label: 'Time', value: _formattedTime(event)),
                           const SizedBox(height: 10),
+                          _DetailItem(
+                              label: 'Duration',
+                              value: '${event.durationHours} hours'),
+                          const SizedBox(height: 10),
                           _DetailItem(label: 'Venue', value: venue),
                           const SizedBox(height: 12),
                           const Text(
@@ -1801,92 +1777,484 @@ class _EventDetailsPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              if (!isAllocatedEvent)
-                SizedBox(
+              if (isEnded) ...[
+                Container(
                   width: double.infinity,
-                  height: 46,
-                  child: FilledButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Added to your schedule.'),
-                        ),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _primaryAccent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      'Add to Schedule',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1B2E).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFF0D1B2E).withValues(alpha: 0.12),
                     ),
                   ),
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 46,
-                        child: OutlinedButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Added to your schedule.'),
-                              ),
-                            );
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _primaryAccent,
-                            side: const BorderSide(color: Color(0xFFD9BFA5)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text(
-                            'Add to Schedule',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.event_busy_rounded, size: 18, color: Color(0xFF7B6E63)),
+                      SizedBox(width: 8),
+                      Text(
+                        'This event has ended',
+                        style: TextStyle(
+                          color: Color(0xFF7B6E63),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Feedback Input
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE8D5C4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Share your feedback',
+                        style: TextStyle(
+                          color: Color(0xFF0D1B2E),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _feedbackController,
+                              textCapitalization: TextCapitalization.sentences,
+                              minLines: 1,
+                              maxLines: 3,
+                              decoration: InputDecoration(
+                                hintText: 'How was the event?',
+                                hintStyle: const TextStyle(
+                                  color: Color(0xFF9F8F83),
+                                  fontSize: 14,
+                                ),
+                                filled: true,
+                                fillColor: const Color(0xFFF6F1EB),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Material(
+                            color: _sendingFeedback
+                                ? const Color(0xFF8A98A9)
+                                : const Color(0xFFCB6D22),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: _sendingFeedback ? null : _submitFeedback,
+                              child: Padding(
+                                padding: const EdgeInsets.all(11),
+                                child: _sendingFeedback
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.send_rounded,
+                                        color: Colors.white, size: 22),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Feedback List
+                const Text(
+                  'FEEDBACK',
+                  style: TextStyle(
+                    color: Color(0xFF8A6D5A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2.5,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('events')
+                      .doc(event.id)
+                      .collection('feedback')
+                      .orderBy('timestamp', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+
+                    final docs = snapshot.data?.docs ?? [];
+
+                    if (docs.isEmpty) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 30),
+                        child: Column(
+                          children: [
+                            Icon(Icons.rate_review_outlined,
+                                size: 36,
+                                color: const Color(0xFF0D1B2E)
+                                    .withValues(alpha: 0.2)),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No feedback yet. Be the first!',
+                              style: TextStyle(
+                                color: const Color(0xFF0D1B2E)
+                                    .withValues(alpha: 0.45),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final currentUid =
+                        FirebaseAuth.instance.currentUser?.uid ?? '';
+
+                    return Column(
+                      children: docs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final senderName =
+                            data['senderName'] as String? ?? 'Student';
+                        final text = data['text'] as String? ?? '';
+                        final likedBy = List<String>.from(
+                            data['likedBy'] as List<dynamic>? ?? []);
+                        final likeCount = likedBy.length;
+                        final hasLiked = likedBy.contains(currentUid);
+                        final ts = data['timestamp'] as Timestamp?;
+                        final timeAgo = ts != null
+                            ? _timeAgoText(ts.toDate())
+                            : 'Just now';
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                  color: const Color(0xFFE8D5C4)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: _primaryAccent
+                                            .withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          senderName.isNotEmpty
+                                              ? senderName[0]
+                                                  .toUpperCase()
+                                              : '?',
+                                          style: const TextStyle(
+                                            color: _primaryAccent,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            senderName,
+                                            style: const TextStyle(
+                                              color: Color(0xFF0D1B2E),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          Text(
+                                            timeAgo,
+                                            style: const TextStyle(
+                                              color: Color(0xFF9F8F83),
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  text,
+                                  style: const TextStyle(
+                                    color: Color(0xFF333333),
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    InkWell(
+                                      borderRadius:
+                                          BorderRadius.circular(20),
+                                      onTap: () => _toggleLike(
+                                          doc.id, hasLiked, currentUid),
+                                      child: Container(
+                                        padding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 10,
+                                                vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: hasLiked
+                                              ? _primaryAccent
+                                                  .withValues(
+                                                      alpha: 0.12)
+                                              : const Color(0xFFF6F1EB),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize:
+                                              MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              hasLiked
+                                                  ? Icons.thumb_up_alt
+                                                  : Icons
+                                                      .thumb_up_alt_outlined,
+                                              size: 16,
+                                              color: hasLiked
+                                                  ? _primaryAccent
+                                                  : const Color(
+                                                      0xFF7B6E63),
+                                            ),
+                                            if (likeCount > 0) ...[
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                '$likeCount',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight:
+                                                      FontWeight.w700,
+                                                  color: hasLiked
+                                                      ? _primaryAccent
+                                                      : const Color(
+                                                          0xFF7B6E63),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ] else if (isLive) ...[
+                if (event.isQnaEnabled)
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1A2A40), Color(0xFF0D1B2E)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0D1B2E).withValues(alpha: 0.35),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SizedBox(
-                        height: 46,
-                        child: FilledButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Your presence has been counted.',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => StudentQnaScreen(event: event),
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.white,
+                                      blurRadius: 4,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
                                 ),
                               ),
-                            );
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _primaryAccent,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text(
-                            'Join Event',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Join Live Q&A',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  )
+              ] else ...[
+                if (!isAllocatedEvent)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: FilledButton(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Added to your schedule.'),
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primaryAccent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text(
+                        'Add to Schedule',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 46,
+                          child: OutlinedButton(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Added to your schedule.'),
+                                ),
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _primaryAccent,
+                              side: const BorderSide(color: Color(0xFFD9BFA5)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text(
+                              'Add to Schedule',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SizedBox(
+                          height: 46,
+                          child: FilledButton(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Your presence has been counted.',
+                                  ),
+                                ),
+                              );
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _primaryAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text(
+                              'Join Event',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ],
           ),
         ),

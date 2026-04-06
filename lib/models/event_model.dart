@@ -44,8 +44,10 @@ class EventModel {
   final String description;
   final EventApprovalStatus approvalStatus;
   final String? posterImageUrl;
+  final bool isQnaEnabled;
   final Timestamp? createdAt;
   final Timestamp? approvalUpdatedAt;
+  final int durationHours;
 
   EventModel({
     this.id,
@@ -64,8 +66,10 @@ class EventModel {
     required this.description,
     this.approvalStatus = EventApprovalStatus.pending,
     this.posterImageUrl,
+    this.isQnaEnabled = false,
     this.createdAt,
     this.approvalUpdatedAt,
+    this.durationHours = 2,
   });
 
   factory EventModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -125,8 +129,10 @@ class EventModel {
       posterImageUrl: (map['posterImageUrl'] as String?)?.trim().isEmpty == true
           ? null
           : (map['posterImageUrl'] as String?),
+      isQnaEnabled: map['isQnaEnabled'] as bool? ?? false,
       createdAt: map['createdAt'] as Timestamp?,
       approvalUpdatedAt: map['approvalUpdatedAt'] as Timestamp?,
+      durationHours: map['durationHours'] as int? ?? 2,
     );
   }
 
@@ -151,7 +157,9 @@ class EventModel {
       'approvalStatus': statusValue,
       'status': statusValue,
       'posterImageUrl': posterImageUrl,
+      'isQnaEnabled': isQnaEnabled,
       'createdAt': FieldValue.serverTimestamp(),
+      'durationHours': durationHours,
     };
   }
 }

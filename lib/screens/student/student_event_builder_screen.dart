@@ -20,10 +20,12 @@ enum _EventBuilderStep {
   name,
   date,
   time,
+  duration,
   location,
   participantMode,
   attendees,
   description,
+  qnaMode,
   review
 }
 
@@ -34,6 +36,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
 
   final List<String> _categories = const [
     'Hackathon',
@@ -59,17 +62,20 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   String? _name;
   DateTime? _date;
   TimeOfDay? _time;
+  int? _durationHours;
   String? _location;
   bool _hasParticipantLimit = true;
   bool _participantModeChosen = false;
   int? _attendees;
   String? _description;
   String? _posterImageUrl;
+  bool _isQnaEnabled = false;
+  bool _qnaModeChosen = false;
   bool _saving = false;
   bool _thinking = false;
   bool _uploadingPoster = false;
 
-  static const int _builderStepsCount = 8;
+  static const int _builderStepsCount = 10;
 
   @override
   void initState() {
@@ -82,6 +88,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -138,6 +145,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     _addUser(_formatDate(_date!));
     _step = _firstMissingStep();
     _addAssistant(_nextPromptForStep(_step));
+    _focusNode.requestFocus();
   }
 
   Future<void> _pickTimeFromClock() async {
@@ -151,6 +159,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     _addUser(_formatTime(_time!));
     _step = _firstMissingStep();
     _addAssistant(_nextPromptForStep(_step));
+    _focusNode.requestFocus();
   }
 
   Future<void> _submitInput() async {
@@ -174,7 +183,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       } catch (_) {
         aiResult = null;
       } finally {
-        if (mounted) setState(() => _thinking = false);
+        if (mounted) {
+          setState(() => _thinking = false);
+          if (_step != _EventBuilderStep.review) {
+            _focusNode.requestFocus();
+          }
+        }
       }
     }
 
@@ -279,6 +293,17 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           return;
         }
         _time = parsedTime;
+        _step = _EventBuilderStep.duration;
+        _addAssistant('How long is the event in hours? (Example: 2, 4)');
+        break;
+      case _EventBuilderStep.duration:
+        final extractedDuration = RegExp(r'\d+').firstMatch(input)?.group(0);
+        final parsedDuration = int.tryParse(extractedDuration ?? '');
+        if (parsedDuration == null || parsedDuration <= 0) {
+          _addAssistant('Please enter a valid duration in hours. Example: 2, 4');
+          return;
+        }
+        _durationHours = parsedDuration;
         _step = _EventBuilderStep.location;
         _addAssistant('Where is the event location?');
         break;
@@ -358,8 +383,33 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           return;
         }
         _description = candidateDescription;
-        _step = _EventBuilderStep.review;
-        _addAssistant('Perfect. Review the event details below and save.');
+        _step = _EventBuilderStep.qnaMode;
+        _addAssistant('Perfect. Will this event feature a live Q&A session? Reply yes or no.');
+        break;
+      case _EventBuilderStep.qnaMode:
+        final normalized = input.toLowerCase();
+        final yesValues = {'yes', 'y', 'enable', 'sure'};
+        final noValues = {'no', 'n', 'disable', 'skip'};
+        final hasYesSignal = yesValues.any(normalized.contains);
+        final hasNoSignal = noValues.any(normalized.contains);
+
+        if (hasYesSignal) {
+          _isQnaEnabled = true;
+          _qnaModeChosen = true;
+          _step = _EventBuilderStep.review;
+          _addAssistant('Live Q&A enabled. Review the event details below and save.');
+          return;
+        }
+
+        if (hasNoSignal) {
+          _isQnaEnabled = false;
+          _qnaModeChosen = true;
+          _step = _EventBuilderStep.review;
+          _addAssistant('Live Q&A skipped. Review the event details below and save.');
+          return;
+        }
+
+        _addAssistant('Please answer with yes or no.');
         break;
       case _EventBuilderStep.review:
         break;
@@ -381,6 +431,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       'attendeeCount': _attendees,
       'description': _description,
       'posterImageUrl': _posterImageUrl,
+      'isQnaEnabled': _isQnaEnabled,
     };
   }
 
@@ -481,11 +532,13 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     if (_name == null) return _EventBuilderStep.name;
     if (_date == null) return _EventBuilderStep.date;
     if (_time == null) return _EventBuilderStep.time;
+    if (_durationHours == null) return _EventBuilderStep.duration;
     if (_location == null) return _EventBuilderStep.location;
     if (!_participantModeChosen) return _EventBuilderStep.participantMode;
     if (_hasParticipantLimit && _attendees == null)
       return _EventBuilderStep.attendees;
     if (_description == null) return _EventBuilderStep.description;
+    if (!_qnaModeChosen) return _EventBuilderStep.qnaMode;
     return _EventBuilderStep.review;
   }
 
@@ -499,6 +552,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'What is the event date? (Example: 2026-04-15 or 15/04/2026)';
       case _EventBuilderStep.time:
         return 'What is the start time? (Example: 14:30, 2:30 PM, or 2pm)';
+      case _EventBuilderStep.duration:
+        return 'How long is the event in hours? (Example: 2, 4)';
       case _EventBuilderStep.location:
         return 'Where is the event location?';
       case _EventBuilderStep.participantMode:
@@ -507,6 +562,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'How many attendees are expected?';
       case _EventBuilderStep.description:
         return 'Add a short event description or theme.';
+      case _EventBuilderStep.qnaMode:
+        return 'Will this event feature a live Q&A session? Reply yes or no.';
       case _EventBuilderStep.review:
         return 'Review the summary and save when ready.';
     }
@@ -714,6 +771,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         _name == null ||
         _date == null ||
         _time == null ||
+        _durationHours == null ||
         _location == null ||
         (_hasParticipantLimit && _attendees == null) ||
         _description == null) {
@@ -733,11 +791,13 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         name: _name!,
         date: _date!,
         time: TimeOfDayData(hour: _time!.hour, minute: _time!.minute),
+        durationHours: _durationHours ?? 2,
         location: _location!,
         hasParticipantLimit: hasParticipantLimit,
         attendeeCount: hasParticipantLimit ? _attendees : null,
         description: _description!,
         posterImageUrl: _normalizePosterUrl(_posterImageUrl),
+        isQnaEnabled: _isQnaEnabled,
       );
       await _eventService.createEvent(event);
 
@@ -761,19 +821,24 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       _name = null;
       _date = null;
       _time = null;
+      _durationHours = null;
       _location = null;
       _hasParticipantLimit = true;
       _participantModeChosen = false;
       _attendees = null;
       _description = null;
       _posterImageUrl = null;
+      _isQnaEnabled = false;
+      _qnaModeChosen = false;
       _step = _EventBuilderStep.category;
     });
     _addAssistant('Let us build a new event. First, pick a category.');
+    _focusNode.requestFocus();
   }
 
   Future<void> _openEditSummarySheet() async {
     final nameCtrl = TextEditingController(text: _name ?? '');
+    final durationCtrl = TextEditingController(text: (_durationHours ?? 2).toString());
     final locationCtrl = TextEditingController(text: _location ?? '');
     final attendeesCtrl =
         TextEditingController(text: (_attendees ?? '').toString());
@@ -784,6 +849,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     DateTime tempDate = _date ?? DateTime.now();
     TimeOfDay tempTime = _time ?? const TimeOfDay(hour: 9, minute: 0);
     bool tempHasParticipantLimit = _hasParticipantLimit;
+    bool tempIsQnaEnabled = _isQnaEnabled;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -867,6 +933,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     ),
                     const SizedBox(height: 10),
                     TextField(
+                      controller: durationCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Duration (hours)'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
                       controller: locationCtrl,
                       decoration: const InputDecoration(labelText: 'Location'),
                     ),
@@ -889,6 +961,15 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                       keyboardType: TextInputType.number,
                       decoration:
                           const InputDecoration(labelText: 'Attendee count'),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: tempIsQnaEnabled,
+                      onChanged: (value) {
+                        setModalState(() => tempIsQnaEnabled = value);
+                      },
+                      title: const Text('Enable Live Q&A Session'),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -962,6 +1043,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                             _date = DateTime(
                                 tempDate.year, tempDate.month, tempDate.day);
                             _time = tempTime;
+                            _durationHours = int.tryParse(durationCtrl.text.trim()) ?? 2;
                             _location = locationCtrl.text.trim();
                             _hasParticipantLimit = tempHasParticipantLimit;
                             _participantModeChosen = true;
@@ -970,6 +1052,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                             _description = descriptionCtrl.text.trim();
                             _posterImageUrl =
                                 _normalizePosterUrl(posterCtrl.text.trim());
+                            _isQnaEnabled = tempIsQnaEnabled;
+                            _qnaModeChosen = true;
                             _step = _EventBuilderStep.review;
                           });
                           Navigator.pop(context);
@@ -1085,10 +1169,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     if (_name != null) count++;
     if (_date != null) count++;
     if (_time != null) count++;
+    if (_durationHours != null) count++;
     if (_location != null) count++;
     if (_participantModeChosen) count++;
     if (!_hasParticipantLimit || _attendees != null) count++;
     if (_description != null) count++;
+    if (_qnaModeChosen) count++;
     return count;
   }
 
@@ -1102,6 +1188,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'Date';
       case _EventBuilderStep.time:
         return 'Time';
+      case _EventBuilderStep.duration:
+        return 'Duration';
       case _EventBuilderStep.location:
         return 'Location';
       case _EventBuilderStep.participantMode:
@@ -1110,6 +1198,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'Attendees';
       case _EventBuilderStep.description:
         return 'Description';
+      case _EventBuilderStep.qnaMode:
+        return 'Live Q&A';
       case _EventBuilderStep.review:
         return 'Review';
     }
@@ -1184,15 +1274,6 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                         backgroundColor: const Color(0xFFE7D9C8),
                         valueColor:
                             const AlwaysStoppedAnimation(Color(0xFFCB6D22)),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'The assistant will collect category, name, date, time, location, and description. Participant count is optional per event.',
-                      style: TextStyle(
-                        color: Color(0xFF4E6076),
-                        height: 1.45,
-                        fontSize: 15,
                       ),
                     ),
                   ],
@@ -1288,9 +1369,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     Expanded(
                       child: TextField(
                         controller: _inputController,
+                        focusNode: _focusNode,
                         enabled: !isReview && !_saving && !_thinking,
+                        keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
                         minLines: 1,
-                        maxLines: 3,
+                        maxLines: 4,
                         onSubmitted: (_) => _submitInput(),
                         decoration: InputDecoration(
                           border: InputBorder.none,
@@ -1374,6 +1458,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
               label: 'Date', value: _date == null ? '-' : _formatDate(_date!)),
           _SummaryLine(
               label: 'Time', value: _time == null ? '-' : _formatTime(_time!)),
+          _SummaryLine(
+              label: 'Duration', value: _durationHours == null ? '-' : '${_durationHours} hours'),
           _SummaryLine(label: 'Location', value: _location ?? '-'),
           _SummaryLine(
             label: 'Participant count',
@@ -1382,6 +1468,10 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                 : 'Not required',
           ),
           const _SummaryLine(label: 'Approval status', value: 'Pending'),
+          _SummaryLine(
+            label: 'Live Q&A',
+            value: _isQnaEnabled ? 'Enabled' : 'Disabled',
+          ),
           _SummaryLine(label: 'Description', value: _description ?? '-'),
           const SizedBox(height: 8),
           _SummaryLine(
