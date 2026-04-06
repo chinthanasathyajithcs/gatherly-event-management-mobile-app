@@ -136,6 +136,16 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
     return '$normalizedHour:$minuteText $suffix';
   }
 
+  String _timeTextTight(EventModel event) {
+    final hour = event.time.hour;
+    final minute = event.time.minute;
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final normalizedHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    if (minute == 0) return '$normalizedHour$suffix';
+    final minuteText = minute.toString().padLeft(2, '0');
+    return '$normalizedHour:$minuteText$suffix';
+  }
+
   String _spotlightDateLabel(EventModel event, DateTime now) {
     final start = _start(event);
     final today = DateTime(now.year, now.month, now.day);
@@ -145,6 +155,35 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
     if (eventDay == tomorrow) return 'Tomorrow';
     if (eventDay == today) return 'Today';
     return _dateText(start);
+  }
+
+  String _upcomingScheduleText(EventModel event, DateTime now) {
+    const weekdays = [
+      'Mon',
+      'Tue',
+      'Wed',
+      'Thu',
+      'Fri',
+      'Sat',
+      'Sun',
+    ];
+
+    final start = _start(event);
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final eventDay = DateTime(start.year, start.month, start.day);
+    final timeText = _timeTextTight(event);
+
+    if (eventDay == today) {
+      final evening = start.hour >= 17;
+      return '${evening ? 'Tonight' : 'Today'}, $timeText';
+    }
+
+    if (eventDay == tomorrow) {
+      return 'Tomorrow, $timeText';
+    }
+
+    return '${weekdays[start.weekday - 1]} ${start.day}, $timeText';
   }
 
   bool _matches(EventModel event, String query) {
@@ -185,6 +224,39 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
         return const Color(0xFF2563EB);
       case 'volunteering':
         return const Color(0xFF22C55E);
+      default:
+        return _primaryAccent;
+    }
+  }
+
+  Color _upcomingBadgeColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'hackathon':
+        return const Color(0xFF9A5E2B);
+      case 'workshop':
+        return const Color(0xFFB06A30);
+      case 'seminar':
+        return const Color(0xFFC47A36);
+      case 'conference':
+        return const Color(0xFFA86834);
+      case 'festival':
+        return const Color(0xFFD1863D);
+      case 'meetup':
+      case 'networking':
+        return const Color(0xFF8C6B42);
+      case 'webinar':
+        return const Color(0xFF9F7148);
+      case 'competition':
+        return const Color(0xFFB36A3B);
+      case 'career fair':
+        return const Color(0xFFAF7646);
+      case 'sports':
+        return const Color(0xFFC8863C);
+      case 'cultural':
+        return const Color(0xFFAD6C52);
+      case 'orientation':
+      case 'volunteering':
+        return const Color(0xFFA1764B);
       default:
         return _primaryAccent;
     }
@@ -258,13 +330,18 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
               .toList();
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 110),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              10,
+              16,
+              20 + MediaQuery.of(context).padding.bottom,
+            ),
             children: [
               _buildSearchBar(),
               const SizedBox(height: 16),
               _buildCategories(),
               const SizedBox(height: 26),
-              _sectionHeader('Featured Pulse', 'CURATION'),
+              _sectionHeader('Happening Now', 'CURATION'),
               const SizedBox(height: 14),
               if (featuredEvent != null)
                 _FeaturedEventCard(
@@ -276,10 +353,10 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                 )
               else
                 _emptyState(
-                  'No live sessions match your filters right now.',
-                  icon: Icons.auto_awesome_rounded,
+                  'Nothing live right now. Stay tuned.',
+                  icon: Icons.videocam_off_rounded,
                 ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 10),
               if (tomorrowEvents.isNotEmpty)
                 ValueListenableBuilder<int>(
                   valueListenable: _tomorrowSpotlightIndexNotifier,
@@ -308,7 +385,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                 )
               else
                 const _TomorrowEmptyCard(),
-              const SizedBox(height: 18),
+              const SizedBox(height: 10),
               _HostEventCard(
                 onTap: () {
                   final openOrganize = widget.onOpenOrganize;
@@ -335,9 +412,15 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _UpcomingEventCard(
                           event: event,
-                          dateText: _dateText(_start(event)),
-                          timeText: _timeText(event),
-                          categoryColor: _categoryColor(event.category),
+                          scheduleText: _upcomingScheduleText(event, now),
+                          categoryColor: _upcomingBadgeColor(event.category),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => _EventDetailsPage(event: event),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -961,81 +1044,46 @@ class _TomorrowEmptyCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       height: _secondaryCardHeight,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7E7D6),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: const Color(0xFFD9BFA5),
-          width: 1.2,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      color: _bgColor,
+      child: const Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'TOMORROW',
+                  'No events tomorrow',
                   style: TextStyle(
-                    color: _primaryAccent,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.8,
-                  ),
-                ),
-                SizedBox(height: 10),
-                Text(
-                  'No events are scheduled for tomorrow yet',
-                  style: TextStyle(
-                    color: Color(0xFF4A3A30),
-                    fontSize: 20,
+                    color: Color(0xFF545E6B),
+                    fontSize: 19,
                     height: 1.08,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                     letterSpacing: -0.3,
                   ),
                 ),
-                SizedBox(height: 10),
+                SizedBox(height: 6),
                 Text(
-                  'Check out upcoming events below or host one now.',
+                  'Check back later.',
                   style: TextStyle(
-                    color: _textMuted,
+                    color: Color(0xFF7B8391),
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 16),
-          Container(
-            width: 82,
-            height: 82,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8C4A9),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x1F8B5C2A),
-                  blurRadius: 14,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.bolt_rounded,
-              color: Color(0xFFB97A34),
-              size: 36,
+          SizedBox(width: 10),
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(
+              Icons.event_busy_rounded,
+              size: 34,
+              color: Color(0xFF8F98A6),
             ),
           ),
         ],
@@ -1046,139 +1094,384 @@ class _TomorrowEmptyCard extends StatelessWidget {
 
 class _UpcomingEventCard extends StatelessWidget {
   final EventModel event;
-  final String dateText;
-  final String timeText;
+  final String scheduleText;
   final Color categoryColor;
+  final VoidCallback onTap;
 
   const _UpcomingEventCard({
     required this.event,
-    required this.dateText,
-    required this.timeText,
+    required this.scheduleText,
     required this.categoryColor,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final hasPoster =
         event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
-    final goingText = event.hasParticipantLimit
-        ? '${event.joinedParticipantCount}/${event.attendeeCount ?? event.joinedParticipantCount} going'
-        : '${event.joinedParticipantCount} attending';
+    final showAttending = event.joinedParticipantCount > 10;
+    final goingText = '${event.joinedParticipantCount} attending';
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0D1B2E),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0E0D1B2E),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: SizedBox(
-              width: 72,
-              height: 72,
-              child: hasPoster
-                  ? Image.network(event.posterImageUrl!, fit: BoxFit.cover)
-                  : Container(
-                      color: categoryColor.withValues(alpha: 0.12),
-                      child: Icon(Icons.event_rounded,
-                          color: categoryColor, size: 28),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: hasPoster
+                      ? Image.network(event.posterImageUrl!, fit: BoxFit.cover)
+                      : Container(
+                          color: categoryColor.withValues(alpha: 0.12),
+                          child: Icon(Icons.event_rounded,
+                              color: categoryColor, size: 28),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: categoryColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            event.category.toUpperCase(),
+                            style: TextStyle(
+                              color: categoryColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '|',
+                          style:
+                              TextStyle(color: Color(0xFFB79D87), fontSize: 12),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            event.location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _textMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      event.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _textDark,
+                        fontSize: 18,
+                        height: 1.05,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
                       ),
-                      decoration: BoxDecoration(
-                        color: categoryColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        event.category.toUpperCase(),
-                        style: TextStyle(
-                          color: categoryColor,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.1,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      children: [
+                        Text(
+                          scheduleText,
+                          style: const TextStyle(
+                            color: _textMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (showAttending) ...[
+                          const Text(
+                            '•',
+                            style: TextStyle(
+                              color: Color(0xFFB79D87),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            goingText,
+                            style: const TextStyle(
+                              color: _textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EventDetailsPage extends StatelessWidget {
+  final EventModel event;
+
+  const _EventDetailsPage({required this.event});
+
+  DateTime _start(EventModel event) {
+    return DateTime(
+      event.date.year,
+      event.date.month,
+      event.date.day,
+      event.time.hour,
+      event.time.minute,
+    );
+  }
+
+  String _formattedDate(EventModel event) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    final start = _start(event);
+    return '${weekdays[start.weekday - 1]}, ${start.day} ${months[start.month - 1]} ${start.year}';
+  }
+
+  String _formattedTime(EventModel event) {
+    final hour = event.time.hour;
+    final minute = event.time.minute.toString().padLeft(2, '0');
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final normalizedHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    return '$normalizedHour:$minute $suffix';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPoster =
+        event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
+    final venue = event.location.trim().isEmpty ? 'TBA' : event.location;
+
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'DETAILS',
+                style: TextStyle(
+                  color: Color(0xFF8A6D5A),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2.5,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                event.name,
+                style: const TextStyle(
+                  color: _textDark,
+                  fontSize: 30,
+                  height: 1.02,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 280,
+                  child: hasPoster
+                      ? Container(
+                          color: _bgColor,
+                          child: Image.network(
+                            event.posterImageUrl!,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Container(
+                          color: const Color(0xFFEFE3D7),
+                          child: const Icon(
+                            Icons.image_not_supported_rounded,
+                            color: Color(0xFFAF8868),
+                            size: 44,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE7D7C9)),
+                ),
+                child: Stack(
+                  children: [
+                    const Positioned(
+                      right: 0,
+                      top: 0,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Color(0x16CB6D22),
+                          shape: BoxShape.circle,
+                        ),
+                        child: SizedBox(
+                          width: 84,
+                          height: 84,
+                          child: Icon(
+                            Icons.event_available_rounded,
+                            size: 38,
+                            color: Color(0x62CB6D22),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      '|',
-                      style: TextStyle(color: Color(0xFFB79D87), fontSize: 12),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        event.location,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4,
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 96),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _DetailItem(
+                              label: 'Date', value: _formattedDate(event)),
+                          const SizedBox(height: 10),
+                          _DetailItem(
+                              label: 'Time', value: _formattedTime(event)),
+                          const SizedBox(height: 10),
+                          _DetailItem(label: 'Venue', value: venue),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Category',
+                            style: TextStyle(
+                              color: _textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _primaryAccent.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              event.category.toUpperCase(),
+                              style: const TextStyle(
+                                color: _primaryAccent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  event.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _textDark,
-                    fontSize: 18,
-                    height: 1.05,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '$dateText, $timeText - $goingText',
-                  style: const TextStyle(
-                    color: _textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: _primaryAccent.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child:
-                const Icon(Icons.add_rounded, color: _primaryAccent, size: 20),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _DetailItem extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailItem({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: _textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            color: _textDark,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 }
