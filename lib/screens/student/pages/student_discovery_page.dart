@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -9,6 +11,7 @@ const Color _textDark = Color(0xFF1B1C20);
 const Color _textMuted = Color(0xFF7B6E63);
 const Color _primaryAccent = Color(0xFFCB6D22);
 const Color _softBorder = Color(0xFFE8D5C4);
+const double _secondaryCardHeight = 156;
 
 const List<String> _categories = [
   'All',
@@ -40,9 +43,27 @@ class StudentDiscoveryPage extends StatefulWidget {
 class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
   final TextEditingController _searchController = TextEditingController();
   String _selectedCategory = 'All';
+  Timer? _tomorrowRotationTimer;
+  int _tomorrowEventsCount = 0;
+  final ValueNotifier<int> _tomorrowSpotlightIndexNotifier = ValueNotifier(0);
+
+  @override
+  void initState() {
+    super.initState();
+    _tomorrowRotationTimer =
+        Timer.periodic(const Duration(seconds: 4), (_) => _rotateTomorrow());
+  }
+
+  void _rotateTomorrow() {
+    if (!mounted || _tomorrowEventsCount < 2) return;
+    _tomorrowSpotlightIndexNotifier.value =
+        (_tomorrowSpotlightIndexNotifier.value + 1) % _tomorrowEventsCount;
+  }
 
   @override
   void dispose() {
+    _tomorrowRotationTimer?.cancel();
+    _tomorrowSpotlightIndexNotifier.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -55,7 +76,8 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
       final events = snapshot.docs
           .map(EventModel.fromDoc)
           .where(
-              (event) => event.approvalStatus == EventApprovalStatus.accepted)
+            (event) => event.approvalStatus == EventApprovalStatus.accepted,
+          )
           .toList();
       events.sort((a, b) => _start(a).compareTo(_start(b)));
       return events;
@@ -102,6 +124,27 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
     final suffix = hour >= 12 ? 'PM' : 'AM';
     final normalizedHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
     return '$normalizedHour:$minute $suffix';
+  }
+
+  String _timeTextCompact(EventModel event) {
+    final hour = event.time.hour;
+    final minute = event.time.minute;
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final normalizedHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    if (minute == 0) return '$normalizedHour $suffix';
+    final minuteText = minute.toString().padLeft(2, '0');
+    return '$normalizedHour:$minuteText $suffix';
+  }
+
+  String _spotlightDateLabel(EventModel event, DateTime now) {
+    final start = _start(event);
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final eventDay = DateTime(start.year, start.month, start.day);
+
+    if (eventDay == tomorrow) return 'Tomorrow';
+    if (eventDay == today) return 'Today';
+    return _dateText(start);
   }
 
   bool _matches(EventModel event, String query) {
@@ -157,129 +200,151 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
           colors: [Color(0xFFF8F3EE), _bgColor],
         ),
       ),
-      child: Stack(
-        children: [
-          StreamBuilder<List<EventModel>>(
-            stream: _eventsStream(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: _primaryAccent),
-                );
-              }
+      child: StreamBuilder<List<EventModel>>(
+        stream: _eventsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: _primaryAccent),
+            );
+          }
 
-              if (snapshot.hasError) {
-                return const Center(
-                  child: Text(
-                    'Unable to load events right now.',
-                    style: TextStyle(color: _textMuted),
-                  ),
-                );
-              }
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text(
+                'Unable to load events right now.',
+                style: TextStyle(color: _textMuted),
+              ),
+            );
+          }
 
-              final allEvents = snapshot.data ?? <EventModel>[];
-              final query = _searchController.text.trim();
-              final filteredEvents = allEvents.where((event) {
-                final categoryMatch = _selectedCategory == 'All' ||
-                    event.category.toLowerCase() ==
-                        _selectedCategory.toLowerCase();
-                return categoryMatch && _matches(event, query);
-              }).toList();
+          final allEvents = snapshot.data ?? <EventModel>[];
+          final query = _searchController.text.trim();
+          final filteredEvents = allEvents.where((event) {
+            final categoryMatch = _selectedCategory == 'All' ||
+                event.category.toLowerCase() == _selectedCategory.toLowerCase();
+            return categoryMatch && _matches(event, query);
+          }).toList();
 
-              final now = DateTime.now();
-              final liveEvents =
-                  filteredEvents.where((event) => _isLive(event, now)).toList();
-              final upcomingEvents = filteredEvents
-                  .where((event) => _start(event).isAfter(now))
-                  .toList()
-                ..sort((a, b) => _start(a).compareTo(_start(b)));
+          final now = DateTime.now();
+          final liveEvents =
+              filteredEvents.where((event) => _isLive(event, now)).toList();
 
-              final featuredEvent = liveEvents.isNotEmpty
-                  ? liveEvents.first
-                  : upcomingEvents.isNotEmpty
-                      ? upcomingEvents.first
-                      : (filteredEvents.isNotEmpty
-                          ? filteredEvents.first
-                          : null);
+          final upcomingEvents = filteredEvents
+              .where((event) => _start(event).isAfter(now))
+              .toList()
+            ..sort((a, b) => _start(a).compareTo(_start(b)));
 
-              final spotlightEvent = upcomingEvents.length > 1
-                  ? upcomingEvents[1]
-                  : (filteredEvents.length > 1 ? filteredEvents[1] : null);
+          final tomorrow = DateTime(now.year, now.month, now.day + 1);
+          final tomorrowEvents = upcomingEvents.where((event) {
+            final eventStart = _start(event);
+            return eventStart.year == tomorrow.year &&
+                eventStart.month == tomorrow.month &&
+                eventStart.day == tomorrow.day;
+          }).toList();
 
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 110),
-                children: [
-                  _buildSearchBar(),
-                  const SizedBox(height: 16),
-                  _buildCategories(),
-                  const SizedBox(height: 26),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _sectionHeader('Featured Pulse', 'CURATION'),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  if (featuredEvent != null)
-                    _FeaturedEventCard(
-                      event: featuredEvent,
-                      isLive: liveEvents.contains(featuredEvent),
-                      categoryColor: _categoryColor(featuredEvent.category),
-                      dateText: _dateText(_start(featuredEvent)),
-                      timeText: _timeText(featuredEvent),
-                    )
-                  else
-                    _emptyState(
-                      'No featured event matches your filters yet.',
-                      icon: Icons.auto_awesome_rounded,
-                    ),
-                  const SizedBox(height: 18),
-                  if (spotlightEvent != null)
-                    _SpotlightCard(
-                      event: spotlightEvent,
-                      dateText: _dateText(_start(spotlightEvent)),
-                      timeText: _timeText(spotlightEvent),
-                    ),
-                  const SizedBox(height: 18),
-                  _HostEventCard(
-                    onTap: () {
-                      final openOrganize = widget.onOpenOrganize;
-                      if (openOrganize != null) {
-                        openOrganize();
-                        return;
-                      }
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Event creation coming soon')),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 28),
-                  _sectionHeader('Upcoming for You', 'PERSONALIZED'),
-                  const SizedBox(height: 14),
-                  if (upcomingEvents.isEmpty)
-                    _emptyState(
-                      'No upcoming events found. Try another category or search.',
-                      icon: Icons.event_busy_rounded,
-                    )
-                  else
-                    ...upcomingEvents.take(4).map(
-                          (event) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _UpcomingEventCard(
-                              event: event,
-                              dateText: _dateText(_start(event)),
-                              timeText: _timeText(event),
-                              categoryColor: _categoryColor(event.category),
-                            ),
-                          ),
+          _tomorrowEventsCount = tomorrowEvents.length;
+          if (_tomorrowSpotlightIndexNotifier.value >= _tomorrowEventsCount &&
+              _tomorrowEventsCount > 0) {
+            _tomorrowSpotlightIndexNotifier.value = 0;
+          }
+
+          final featuredEvent = liveEvents.isNotEmpty ? liveEvents.first : null;
+          final personalizedEvents = upcomingEvents
+              .where(
+                (event) =>
+                    !tomorrowEvents.any((tEvent) => tEvent.id == event.id),
+              )
+              .toList();
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 110),
+            children: [
+              _buildSearchBar(),
+              const SizedBox(height: 16),
+              _buildCategories(),
+              const SizedBox(height: 26),
+              _sectionHeader('Featured Pulse', 'CURATION'),
+              const SizedBox(height: 14),
+              if (featuredEvent != null)
+                _FeaturedEventCard(
+                  event: featuredEvent,
+                  isLive: liveEvents.contains(featuredEvent),
+                  categoryColor: _categoryColor(featuredEvent.category),
+                  dateText: _dateText(_start(featuredEvent)),
+                  timeText: _timeText(featuredEvent),
+                )
+              else
+                _emptyState(
+                  'No live sessions match your filters right now.',
+                  icon: Icons.auto_awesome_rounded,
+                ),
+              const SizedBox(height: 18),
+              if (tomorrowEvents.isNotEmpty)
+                ValueListenableBuilder<int>(
+                  valueListenable: _tomorrowSpotlightIndexNotifier,
+                  builder: (context, spotlightIndex, _) {
+                    final safeIndex = spotlightIndex % tomorrowEvents.length;
+                    final spotlightEvent = tomorrowEvents[safeIndex];
+                    return AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 450),
+                      switchInCurve: Curves.easeOut,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, animation) {
+                        final fade = CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeInOut,
+                        );
+                        return FadeTransition(opacity: fade, child: child);
+                      },
+                      child: _SpotlightCard(
+                        key: ValueKey('tomorrow-${spotlightEvent.id}'),
+                        event: spotlightEvent,
+                        dateText: _spotlightDateLabel(spotlightEvent, now),
+                        timeText: _timeTextCompact(spotlightEvent),
+                      ),
+                    );
+                  },
+                )
+              else
+                const _TomorrowEmptyCard(),
+              const SizedBox(height: 18),
+              _HostEventCard(
+                onTap: () {
+                  final openOrganize = widget.onOpenOrganize;
+                  if (openOrganize != null) {
+                    openOrganize();
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Event creation coming soon')),
+                  );
+                },
+              ),
+              const SizedBox(height: 28),
+              _sectionHeader('Upcoming for You', 'PERSONALIZED'),
+              const SizedBox(height: 14),
+              if (personalizedEvents.isEmpty)
+                _emptyState(
+                  'No upcoming events found. Try another category or search.',
+                  icon: Icons.event_busy_rounded,
+                )
+              else
+                ...personalizedEvents.take(4).map(
+                      (event) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _UpcomingEventCard(
+                          event: event,
+                          dateText: _dateText(_start(event)),
+                          timeText: _timeText(event),
+                          categoryColor: _categoryColor(event.category),
                         ),
-                  const SizedBox(height: 20),
-                ],
-              );
-            },
-          ),
-        ],
+                      ),
+                    ),
+              const SizedBox(height: 20),
+            ],
+          );
+        },
       ),
     );
   }
@@ -452,106 +517,116 @@ class _FeaturedEventCard extends StatelessWidget {
       },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        child: Container(
-          height: 320,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF111827),
-                categoryColor.withValues(alpha: 0.95),
-                const Color(0xFF2A0F0A),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: categoryColor.withValues(alpha: 0.18),
-                blurRadius: 28,
-                offset: const Offset(0, 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cardHeight =
+                (constraints.maxWidth * 1.05).clamp(260.0, 380.0);
+            final titleSize = constraints.maxWidth < 360 ? 28.0 : 34.0;
+            return Container(
+              height: cardHeight,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF111827),
+                    categoryColor.withValues(alpha: 0.95),
+                    const Color(0xFF2A0F0A),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: categoryColor.withValues(alpha: 0.18),
+                    blurRadius: 28,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+                image: hasPoster
+                    ? DecorationImage(
+                        image: NetworkImage(event.posterImageUrl!),
+                        fit: BoxFit.cover,
+                        colorFilter: const ColorFilter.mode(
+                          Color(0x70000000),
+                          BlendMode.darken,
+                        ),
+                      )
+                    : null,
               ),
-            ],
-            image: hasPoster
-                ? DecorationImage(
-                    image: NetworkImage(event.posterImageUrl!),
-                    fit: BoxFit.cover,
-                    colorFilter: const ColorFilter.mode(
-                      Color(0x70000000),
-                      BlendMode.darken,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.18),
+                          ],
+                        ),
+                      ),
                     ),
-                  )
-                : null,
-          ),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.18)
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (isLive)
+                              _badge('LIVE NOW', const Color(0xFF0BA84F),
+                                  Colors.white),
+                            _badge(
+                              event.category.toUpperCase(),
+                              Colors.white.withValues(alpha: 0.16),
+                              Colors.white,
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Text(
+                          event.name,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: titleSize,
+                            height: 0.96,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '$dateText $timeText',
+                          style: const TextStyle(
+                            color: Color(0xFFF4EDE5),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          event.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFF8F4EF),
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (isLive)
-                          _badge('LIVE NOW', const Color(0xFF0BA84F),
-                              Colors.white),
-                        _badge(event.category.toUpperCase(),
-                            Colors.white.withValues(alpha: 0.16), Colors.white),
-                      ],
-                    ),
-                    const Spacer(),
-                    Text(
-                      event.name,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 34,
-                        height: 0.96,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.6,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '$dateText • $timeText',
-                      style: const TextStyle(
-                        color: Color(0xFFF4EDE5),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      event.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFFF8F4EF),
-                        fontSize: 14,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -583,45 +658,106 @@ class _SpotlightCard extends StatelessWidget {
   final String timeText;
 
   const _SpotlightCard({
+    super.key,
     required this.event,
     required this.dateText,
     required this.timeText,
   });
 
+  IconData _spotlightIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'workshop':
+        return Icons.psychology_alt_rounded;
+      case 'seminar':
+        return Icons.record_voice_over_rounded;
+      case 'conference':
+        return Icons.business_center_rounded;
+      case 'hackathon':
+        return Icons.code_rounded;
+      case 'festival':
+        return Icons.celebration_rounded;
+      case 'meetup':
+      case 'networking':
+        return Icons.groups_rounded;
+      case 'sports':
+        return Icons.sports_basketball_rounded;
+      case 'cultural':
+        return Icons.palette_rounded;
+      case 'webinar':
+        return Icons.live_tv_rounded;
+      default:
+        return Icons.bolt_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasPoster =
-        event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
     return Container(
+      width: double.infinity,
+      height: _secondaryCardHeight,
       padding: const EdgeInsets.all(18),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFFF1D8C1),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFF6EBDD),
+            Color(0xFFF1E0CF),
+          ],
+        ),
         borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: const Color(0xFFF0CBB1),
+          width: 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
-      child: Row(
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Expanded(
+          Positioned(
+            top: -24,
+            left: -30,
+            child: Container(
+              width: 120,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.24),
+                borderRadius: BorderRadius.circular(40),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 72),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   event.category.toUpperCase(),
                   style: const TextStyle(
-                    color: Color(0xFFA05B1A),
-                    fontSize: 10,
+                    color: Color(0xFFA96A2A),
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 1.8,
+                    letterSpacing: 2.0,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   event.name,
-                  maxLines: 3,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: _textDark,
-                    fontSize: 22,
-                    height: 1.05,
+                    color: Color(0xFF4A3A30),
+                    fontSize: 26,
+                    height: 1.0,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.4,
                   ),
@@ -630,14 +766,16 @@ class _SpotlightCard extends StatelessWidget {
                 Row(
                   children: [
                     const Icon(Icons.calendar_today_rounded,
-                        size: 14, color: _textMuted),
+                        size: 13, color: Color(0xFF81695B)),
                     const SizedBox(width: 6),
-                    Text(
-                      '$dateText, $timeText',
-                      style: const TextStyle(
-                        color: _textMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    Flexible(
+                      child: Text(
+                        '$dateText, $timeText',
+                        style: const TextStyle(
+                          color: Color(0xFF81695B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -645,19 +783,37 @@ class _SpotlightCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: SizedBox(
-              width: 82,
-              height: 82,
-              child: hasPoster
-                  ? Image.network(event.posterImageUrl!, fit: BoxFit.cover)
-                  : Container(
-                      color: const Color(0xFFDDB58D),
-                      child: const Icon(Icons.flash_on_rounded,
-                          color: Colors.white, size: 32),
-                    ),
+          Positioned(
+            right: -26,
+            bottom: -32,
+            child: Container(
+              width: 126,
+              height: 126,
+              decoration: const BoxDecoration(
+                color: Color(0x42D9A169),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            right: -14,
+            bottom: -18,
+            child: Container(
+              width: 94,
+              height: 94,
+              decoration: const BoxDecoration(
+                color: Color(0x28D9A169),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 14,
+            child: Icon(
+              _spotlightIcon(event.category),
+              size: 30,
+              color: const Color(0xFFD39A61),
             ),
           ),
         ],
@@ -674,9 +830,11 @@ class _HostEventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
+      height: _secondaryCardHeight,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7E7D6),
+        color: const Color(0xFFF3E7DA),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
           color: const Color(0xFFD9BFA5),
@@ -713,7 +871,8 @@ class _HostEventCard extends StatelessWidget {
                 backgroundColor: _primaryAccent,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
               child: const Text(
                 'Get Started',
@@ -722,6 +881,97 @@ class _HostEventCard extends StatelessWidget {
                   fontSize: 13,
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TomorrowEmptyCard extends StatelessWidget {
+  const _TomorrowEmptyCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: _secondaryCardHeight,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7E7D6),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: const Color(0xFFD9BFA5),
+          width: 1.2,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'TOMORROW',
+                  style: TextStyle(
+                    color: _primaryAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'No events are scheduled for tomorrow yet',
+                  style: TextStyle(
+                    color: Color(0xFF4A3A30),
+                    fontSize: 20,
+                    height: 1.08,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'Check out upcoming events below or host one now.',
+                  style: TextStyle(
+                    color: _textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Container(
+            width: 82,
+            height: 82,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8C4A9),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1F8B5C2A),
+                  blurRadius: 14,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.bolt_rounded,
+              color: Color(0xFFB97A34),
+              size: 36,
             ),
           ),
         ],
@@ -789,7 +1039,9 @@ class _UpcomingEventCard extends StatelessWidget {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: categoryColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
@@ -806,7 +1058,7 @@ class _UpcomingEventCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     const Text(
-                      '•',
+                      '|',
                       style: TextStyle(color: Color(0xFFB79D87), fontSize: 12),
                     ),
                     const SizedBox(width: 6),
@@ -840,7 +1092,7 @@ class _UpcomingEventCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '$dateText, $timeText • $goingText',
+                  '$dateText, $timeText - $goingText',
                   style: const TextStyle(
                     color: _textMuted,
                     fontSize: 12,
