@@ -6,10 +6,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../models/event_model.dart';
-import '../../../models/user_model.dart';
-import '../../../services/auth_service.dart';
-import '../../../services/event_service.dart';
+import '../../models/event_model.dart';
+import '../../models/user_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/event_service.dart';
 import 'student_event_builder_screen.dart';
 
 class StudentOrganizePage extends StatelessWidget {

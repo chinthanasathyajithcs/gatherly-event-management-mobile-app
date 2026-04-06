@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../../../models/user_model.dart';
-import '../../../services/auth_service.dart';
-import '../../admin/admin_dashboard_screen.dart';
-import '../../auth/auth_shell_screen.dart';
-import '../../payments_screen.dart';
+import '../../models/user_model.dart';
+import '../../services/auth_service.dart';
+import '../admin/admin_dashboard_screen.dart';
+import '../auth/auth_shell_screen.dart';
+import '../payments_screen.dart';
 
 class StudentProfilePage extends StatelessWidget {
   const StudentProfilePage({super.key});

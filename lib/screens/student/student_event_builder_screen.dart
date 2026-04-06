@@ -3,9 +3,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../models/event_model.dart';
-import '../../../services/event_service.dart';
-import '../../../services/gemini_event_assistant_service.dart';
+import '../../models/event_model.dart';
+import '../../services/event_service.dart';
+import '../../services/gemini_event_assistant_service.dart';
 
 class StudentEventBuilderScreen extends StatefulWidget {
   const StudentEventBuilderScreen({super.key});

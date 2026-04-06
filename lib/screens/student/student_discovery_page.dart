@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../../models/event_model.dart';
+import '../../models/event_model.dart';
 
 const Color _bgColor = Color(0xFFF6F1EB);
 const Color _cardColor = Color(0xFFFFFFFF);
@@ -52,10 +52,12 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
   Timer? _tomorrowRotationTimer;
   int _tomorrowEventsCount = 0;
   final ValueNotifier<int> _tomorrowSpotlightIndexNotifier = ValueNotifier(0);
+  late Stream<List<EventModel>> _eventsStreamData;
 
   @override
   void initState() {
     super.initState();
+    _eventsStreamData = _eventsStream();
     _tomorrowRotationTimer =
         Timer.periodic(const Duration(seconds: 4), (_) => _rotateTomorrow());
   }
@@ -197,7 +199,8 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
     final haystack =
         '${event.name} ${event.description} ${event.category} ${event.location}'
             .toLowerCase();
-    return haystack.contains(query.toLowerCase());
+    final queryWords = query.toLowerCase().split(RegExp(r'\s+'));
+    return queryWords.every((word) => haystack.contains(word));
   }
 
   Color _categoryColor(String category) {
@@ -279,7 +282,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
         ),
       ),
       child: StreamBuilder<List<EventModel>>(
-        stream: _eventsStream(),
+        stream: _eventsStreamData,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -347,6 +350,33 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
               const SizedBox(height: 16),
               _buildCategories(),
               const SizedBox(height: 26),
+              if (query.isNotEmpty) ...[
+                _sectionHeader('Search Results', 'FOUND EVENTS'),
+                const SizedBox(height: 14),
+                if (filteredEvents.isEmpty)
+                  _emptyState(
+                    'No events found matching "$query".',
+                    icon: Icons.search_off_rounded,
+                  )
+                else
+                  ...filteredEvents.map(
+                        (event) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _UpcomingEventCard(
+                            event: event,
+                            scheduleText: _upcomingScheduleText(event, now),
+                            categoryColor: _upcomingBadgeColor(event.category),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => _EventDetailsPage(event: event),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+              ] else ...[
               _sectionHeader('Happening Now', 'CURATION'),
               const SizedBox(height: 14),
               if (featuredEvent != null)
@@ -385,6 +415,14 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                         event: spotlightEvent,
                         dateText: _spotlightDateLabel(spotlightEvent, now),
                         timeText: _timeTextCompact(spotlightEvent),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  _EventDetailsPage(event: spotlightEvent),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
@@ -430,6 +468,37 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                         ),
                       ),
                     ),
+              
+              const SizedBox(height: 10),
+              _dottedDivider(),
+              const SizedBox(height: 24),
+              
+              _sectionHeader('All Events', 'DISCOVER MORE'),
+              const SizedBox(height: 14),
+              if (upcomingEvents.isEmpty)
+                _emptyState(
+                  'No upcoming events found. Try another category or search.',
+                  icon: Icons.event_busy_rounded,
+                )
+              else
+                ...upcomingEvents.map(
+                      (event) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _UpcomingEventCard(
+                          event: event,
+                          scheduleText: _upcomingScheduleText(event, now),
+                          categoryColor: _upcomingBadgeColor(event.category),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => _EventDetailsPage(event: event),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+              ],
               const SizedBox(height: 20),
             ],
           );
@@ -574,6 +643,36 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _dottedDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final boxWidth = constraints.constrainWidth();
+          const dashWidth = 6.0;
+          const dashHeight = 2.0;
+          final dashCount = (boxWidth / (2 * dashWidth)).floor();
+          return Flex(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            direction: Axis.horizontal,
+            children: List.generate(dashCount, (_) {
+              return SizedBox(
+                width: dashWidth,
+                height: dashHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _softBorder,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              );
+            }),
+          );
+        },
       ),
     );
   }
@@ -745,12 +844,14 @@ class _SpotlightCard extends StatelessWidget {
   final EventModel event;
   final String dateText;
   final String timeText;
+  final VoidCallback onTap;
 
   const _SpotlightCard({
     super.key,
     required this.event,
     required this.dateText,
     required this.timeText,
+    required this.onTap,
   });
 
   IconData _spotlightIcon(String category) {
@@ -781,131 +882,138 @@ class _SpotlightCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: _secondaryCardHeight,
-      padding: const EdgeInsets.all(18),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF6EBDD),
-            Color(0xFFF1E0CF),
-          ],
-        ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: const Color(0xFFF0CBB1),
-          width: 1,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            top: -24,
-            left: -30,
-            child: Container(
-              width: 120,
-              height: 64,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.24),
-                borderRadius: BorderRadius.circular(40),
-              ),
+        child: Container(
+          width: double.infinity,
+          height: _secondaryCardHeight,
+          padding: const EdgeInsets.all(18),
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFFF6EBDD),
+                Color(0xFFF1E0CF),
+              ],
             ),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: const Color(0xFFF0CBB1),
+              width: 1,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 72),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  event.category.toUpperCase(),
-                  style: const TextStyle(
-                    color: Color(0xFFA96A2A),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2.0,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                top: -24,
+                left: -30,
+                child: Container(
+                  width: 120,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.24),
+                    borderRadius: BorderRadius.circular(40),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  event.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF4A3A30),
-                    fontSize: 26,
-                    height: 1.0,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 72),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.calendar_today_rounded,
-                        size: 13, color: Color(0xFF81695B)),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        '$dateText, $timeText',
-                        style: const TextStyle(
-                          color: Color(0xFF81695B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Text(
+                      event.category.toUpperCase(),
+                      style: const TextStyle(
+                        color: Color(0xFFA96A2A),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2.0,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      event.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF4A3A30),
+                        fontSize: 26,
+                        height: 1.0,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded,
+                            size: 13, color: Color(0xFF81695B)),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            '$dateText, $timeText',
+                            style: const TextStyle(
+                              color: Color(0xFF81695B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          Positioned(
-            right: -26,
-            bottom: -32,
-            child: Container(
-              width: 126,
-              height: 126,
-              decoration: const BoxDecoration(
-                color: Color(0x42D9A169),
-                shape: BoxShape.circle,
               ),
-            ),
-          ),
-          Positioned(
-            right: -14,
-            bottom: -18,
-            child: Container(
-              width: 94,
-              height: 94,
-              decoration: const BoxDecoration(
-                color: Color(0x28D9A169),
-                shape: BoxShape.circle,
+              Positioned(
+                right: -26,
+                bottom: -32,
+                child: Container(
+                  width: 126,
+                  height: 126,
+                  decoration: const BoxDecoration(
+                    color: Color(0x42D9A169),
+                    shape: BoxShape.circle,
+                  ),
+                ),
               ),
-            ),
+              Positioned(
+                right: -14,
+                bottom: -18,
+                child: Container(
+                  width: 94,
+                  height: 94,
+                  decoration: const BoxDecoration(
+                    color: Color(0x28D9A169),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 16,
+                bottom: 14,
+                child: Icon(
+                  _spotlightIcon(event.category),
+                  size: 30,
+                  color: const Color(0xFFD39A61),
+                ),
+              ),
+            ],
           ),
-          Positioned(
-            right: 16,
-            bottom: 14,
-            child: Icon(
-              _spotlightIcon(event.category),
-              size: 30,
-              color: const Color(0xFFD39A61),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

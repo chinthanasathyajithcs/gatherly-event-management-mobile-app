@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'pages/student_discovery_page.dart';
-import 'pages/student_organize_page.dart';
-import 'pages/student_profile_page.dart';
-import 'pages/student_schedule_page.dart';
+import 'student_discovery_page.dart';
+import 'student_organize_page.dart';
+import 'student_profile_page.dart';
+import 'student_schedule_page.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   final int initialIndex;
