@@ -1258,6 +1258,20 @@ class _EventDetailsPage extends StatelessWidget {
 
   const _EventDetailsPage({required this.event});
 
+  void _openPosterPreview(BuildContext context) {
+    final posterUrl = event.posterImageUrl;
+    if (posterUrl == null || posterUrl.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _PosterPreviewPage(
+          imageUrl: posterUrl,
+          heroTag: 'event-poster-${event.id}',
+        ),
+      ),
+    );
+  }
+
   DateTime _start(EventModel event) {
     return DateTime(
       event.date.year,
@@ -1341,25 +1355,63 @@ class _EventDetailsPage extends StatelessWidget {
               const SizedBox(height: 16),
               ClipRRect(
                 borderRadius: BorderRadius.circular(24),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 280,
-                  child: hasPoster
-                      ? Container(
-                          color: _bgColor,
-                          child: Image.network(
-                            event.posterImageUrl!,
-                            fit: BoxFit.contain,
-                          ),
-                        )
-                      : Container(
-                          color: const Color(0xFFEFE3D7),
-                          child: const Icon(
-                            Icons.image_not_supported_rounded,
-                            color: Color(0xFFAF8868),
-                            size: 44,
-                          ),
-                        ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: hasPoster ? () => _openPosterPreview(context) : null,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 280,
+                      child: hasPoster
+                          ? Container(
+                              color: _bgColor,
+                              child: Center(
+                                child: AspectRatio(
+                                  aspectRatio: 0.68,
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: Hero(
+                                          tag: 'event-poster-${event.id}',
+                                          child: Image.network(
+                                            event.posterImageUrl!,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        right: 8,
+                                        bottom: 8,
+                                        child: Container(
+                                          width: 30,
+                                          height: 30,
+                                          decoration: BoxDecoration(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.48),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.search_rounded,
+                                            color: Colors.white,
+                                            size: 17,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Container(
+                              color: const Color(0xFFEFE3D7),
+                              child: const Icon(
+                                Icons.image_not_supported_rounded,
+                                color: Color(0xFFAF8868),
+                                size: 44,
+                              ),
+                            ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 18),
@@ -1563,6 +1615,64 @@ class _DetailItem extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PosterPreviewPage extends StatelessWidget {
+  final String imageUrl;
+  final String heroTag;
+
+  const _PosterPreviewPage({
+    required this.imageUrl,
+    required this.heroTag,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: SafeArea(
+        child: Center(
+          child: InteractiveViewer(
+            minScale: 0.8,
+            maxScale: 4.5,
+            child: Hero(
+              tag: heroTag,
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.broken_image_rounded,
+                        color: Colors.white70,
+                        size: 44,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'Unable to load poster',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
