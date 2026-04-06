@@ -42,7 +42,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'UniHub',
+      title: 'Gatherly',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFC4A052)),
@@ -129,7 +129,7 @@ class _AppLoadingScreen extends StatelessWidget {
               ),
               SizedBox(height: 12),
               Text(
-                'UniHub',
+                'Gatherly',
                 style: TextStyle(
                   color: Color(0xFF0D1B2E),
                   fontSize: 22,

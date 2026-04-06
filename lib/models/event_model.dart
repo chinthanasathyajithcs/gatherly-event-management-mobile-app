@@ -48,6 +48,8 @@ class EventModel {
   final Timestamp? createdAt;
   final Timestamp? approvalUpdatedAt;
   final int durationHours;
+  final String? clubId;
+  final String? clubName;
 
   EventModel({
     this.id,
@@ -70,6 +72,8 @@ class EventModel {
     this.createdAt,
     this.approvalUpdatedAt,
     this.durationHours = 2,
+    this.clubId,
+    this.clubName,
   });
 
   factory EventModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -133,6 +137,8 @@ class EventModel {
       createdAt: map['createdAt'] as Timestamp?,
       approvalUpdatedAt: map['approvalUpdatedAt'] as Timestamp?,
       durationHours: map['durationHours'] as int? ?? 2,
+      clubId: map['clubId'] as String?,
+      clubName: map['clubName'] as String?,
     );
   }
 
@@ -160,6 +166,8 @@ class EventModel {
       'isQnaEnabled': isQnaEnabled,
       'createdAt': FieldValue.serverTimestamp(),
       'durationHours': durationHours,
+      'clubId': clubId,
+      'clubName': clubName,
     };
   }
 }

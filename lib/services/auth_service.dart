@@ -273,6 +273,33 @@ class AuthService {
     }
   }
 
+  Future<void> updateUserProfile({
+    required String uid,
+    String? name,
+    String? studentId,
+    String? department,
+    List<String>? preferredCategories,
+  }) async {
+    try {
+      final updates = <String, dynamic>{};
+      if (name != null) updates['name'] = name.trim();
+      if (studentId != null) updates['studentId'] = studentId.trim();
+      if (department != null) updates['department'] = department.trim();
+      if (preferredCategories != null) updates['preferredCategories'] = preferredCategories;
+
+      if (updates.isEmpty) return;
+
+      await _firestore.collection('users').doc(uid).update(updates);
+
+      if (name != null && uid == _auth.currentUser?.uid) {
+        await _auth.currentUser?.updateDisplayName(name.trim());
+      }
+    } on FirebaseException catch (e) {
+      debugPrint('Failed to update profile for $uid: ${e.message}');
+      throw Exception('Unable to update your profile right now.');
+    }
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();

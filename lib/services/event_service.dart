@@ -182,6 +182,10 @@ class EventService {
     }
   }
 
+  Future<void> deleteEvent(String eventId) async {
+    await _events.doc(eventId).delete();
+  }
+
   Future<void> joinEvent(
       {required String eventId, required String userId}) async {
     final docRef = _events.doc(eventId);

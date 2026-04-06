@@ -6,6 +6,7 @@ class UserModel {
   final String? studentId;
   final String? department;
   final String? photoUrl;
+  final List<String>? preferredCategories;
 
   UserModel({
     required this.uid,
@@ -15,6 +16,7 @@ class UserModel {
     this.studentId,
     this.department,
     this.photoUrl,
+    this.preferredCategories,
   });
 
   // Convert Firestore document to UserModel
@@ -27,6 +29,9 @@ class UserModel {
       studentId: map['studentId'],
       department: map['department'],
       photoUrl: map['photoUrl'],
+      preferredCategories: map['preferredCategories'] != null 
+          ? List<String>.from(map['preferredCategories']) 
+          : null,
     );
   }
 
@@ -40,6 +45,7 @@ class UserModel {
       'studentId': studentId,
       'department': department,
       'photoUrl': photoUrl,
+      'preferredCategories': preferredCategories,
       'createdAt': DateTime.now().toIso8601String(),
     };
   }

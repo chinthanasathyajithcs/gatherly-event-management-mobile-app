@@ -10,6 +10,7 @@ import '../../models/event_model.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/event_service.dart';
+import '../../widgets/organizer_event_card.dart';
 import 'student_event_builder_screen.dart';
 
 class StudentOrganizePage extends StatelessWidget {
@@ -952,16 +953,10 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
               children: [
                 // Event cards
                 ...List.generate(visibleEvents.length, (i) {
-                  return _AnimatedEventCard(
+                  return AnimatedOrganizerCard(
                     index: i,
-                    child: _EventCard(
+                    child: OrganizerEventCard(
                       event: visibleEvents[i],
-                      formatDate: _formatDate,
-                      formatTime: _formatTime,
-                      statusLabel: _statusLabel,
-                      statusIcon: _statusIcon,
-                      statusColor: _statusColor,
-                      statusBg: _statusBg,
                       onTap: () => _openEventDetail(context, visibleEvents[i]),
                       onPosterTap: () =>
                           _openPosterEditor(context, visibleEvents[i]),
@@ -1092,490 +1087,6 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Animated wrapper for staggered card entry
-// ---------------------------------------------------------------------------
-
-class _AnimatedEventCard extends StatefulWidget {
-  final int index;
-  final Widget child;
-
-  const _AnimatedEventCard({required this.index, required this.child});
-
-  @override
-  State<_AnimatedEventCard> createState() => _AnimatedEventCardState();
-}
-
-class _AnimatedEventCardState extends State<_AnimatedEventCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _fadeAnim;
-  late final Animation<Offset> _slideAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 450),
-    );
-    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
-
-    Future.delayed(Duration(milliseconds: 80 * widget.index), () {
-      if (mounted) _ctrl.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(
-        position: _slideAnim,
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Event card (main list card)
-// ---------------------------------------------------------------------------
-
-class _EventCard extends StatelessWidget {
-  final EventModel event;
-  final String Function(DateTime) formatDate;
-  final String Function(TimeOfDayData) formatTime;
-  final String Function(EventApprovalStatus) statusLabel;
-  final IconData Function(EventApprovalStatus) statusIcon;
-  final Color Function(EventApprovalStatus) statusColor;
-  final Color Function(EventApprovalStatus) statusBg;
-  final VoidCallback onTap;
-  final VoidCallback onPosterTap;
-
-  const _EventCard({
-    required this.event,
-    required this.formatDate,
-    required this.formatTime,
-    required this.statusLabel,
-    required this.statusIcon,
-    required this.statusColor,
-    required this.statusBg,
-    required this.onTap,
-    required this.onPosterTap,
-  });
-
-  String _participantLabel() {
-    if (!event.hasParticipantLimit) {
-      return 'Open event';
-    }
-
-    return '${event.joinedParticipantCount}/${event.attendeeCount ?? '∞'}';
-  }
-
-  static const _categoryGradients = {
-    'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
-    'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
-    'seminar': [Color(0xFF6A4C93), Color(0xFF9C6ADE)],
-    'conference': [Color(0xFF213555), Color(0xFF4F709C)],
-    'festival': [Color(0xFFB84A00), Color(0xFFFF8A3D)],
-    'meetup': [Color(0xFF355E3B), Color(0xFF5F8D4E)],
-    'webinar': [Color(0xFF005B96), Color(0xFF00A8CC)],
-    'competition': [Color(0xFF6A040F), Color(0xFFDC2F02)],
-    'career fair': [Color(0xFF3A0CA3), Color(0xFF4361EE)],
-    'networking': [Color(0xFF004B23), Color(0xFF38B000)],
-    'sports': [Color(0xFF14213D), Color(0xFFFCA311)],
-    'cultural': [Color(0xFF7B2CBF), Color(0xFFE0AAFF)],
-    'orientation': [Color(0xFF1E3A8A), Color(0xFF2563EB)],
-    'volunteering': [Color(0xFF166534), Color(0xFF22C55E)],
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = _categoryGradients[event.category.trim().toLowerCase()] ??
-        const [Color(0xFF374151), Color(0xFF6B7280)];
-    final sColor = statusColor(event.approvalStatus);
-    final sBg = statusBg(event.approvalStatus);
-    final sLabel = statusLabel(event.approvalStatus);
-    final sIcon = statusIcon(event.approvalStatus);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: const Color(0x0E0D1B2E)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0C0D1B2E),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Poster / gradient header
-                _buildPosterHeader(palette),
-
-                // Details body
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title + status
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              event.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF0D1B2E),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                height: 1.2,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: sBg,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: sColor.withValues(alpha: 0.25)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(sIcon, size: 13, color: sColor),
-                                const SizedBox(width: 4),
-                                Text(
-                                  sLabel,
-                                  style: TextStyle(
-                                    color: sColor,
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Meta info row
-                      Row(
-                        children: [
-                          _MetaChip(
-                            icon: Icons.calendar_today_rounded,
-                            label: formatDate(event.date),
-                          ),
-                          const SizedBox(width: 10),
-                          _MetaChip(
-                            icon: Icons.access_time_rounded,
-                            label: formatTime(event.time),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _MetaChip(
-                            icon: Icons.location_on_outlined,
-                            label: event.location,
-                            flex: true,
-                          ),
-                          const SizedBox(width: 10),
-                          _MetaChip(
-                            icon: Icons.people_outline_rounded,
-                            label: _participantLabel(),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Actions row
-                      Row(
-                        children: [
-                          _ActionChip(
-                            icon: Icons.image_outlined,
-                            label: 'Update Poster',
-                            onTap: onPosterTap,
-                          ),
-                          const Spacer(),
-                          const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 14,
-                            color: Color(0xFFABB8C8),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPosterHeader(List<Color> palette) {
-    if (event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        child: SizedBox(
-          height: 140,
-          width: double.infinity,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.network(
-                event.posterImageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _fallbackGradientHeader(palette),
-              ),
-              // Gradient overlay for readability
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 56,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.35),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // Category chip on poster
-              Positioned(
-                top: 10,
-                left: 12,
-                child: _CategoryBadge(label: event.category),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return _fallbackGradientHeader(palette);
-  }
-
-  Widget _fallbackGradientHeader(List<Color> palette) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-      child: Container(
-        height: 100,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: palette,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Decorative circles
-            Positioned(
-              right: -20,
-              top: -25,
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 30,
-              bottom: -15,
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.06),
-                ),
-              ),
-            ),
-            // Category badge
-            Positioned(
-              top: 12,
-              left: 14,
-              child: _CategoryBadge(label: event.category),
-            ),
-            // Event initial letter
-            Positioned(
-              right: 18,
-              bottom: 10,
-              child: Text(
-                event.name.isNotEmpty ? event.name[0].toUpperCase() : 'E',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  fontSize: 56,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Small UI pieces
-// ---------------------------------------------------------------------------
-
-class _CategoryBadge extends StatelessWidget {
-  final String label;
-  const _CategoryBadge({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0x73000000),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.2,
-        ),
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool flex;
-
-  const _MetaChip({
-    required this.icon,
-    required this.label,
-    this.flex = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: const Color(0xFF8A98A9)),
-        const SizedBox(width: 5),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF4E6076),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-
-    if (flex) return Expanded(child: content);
-    return content;
-  }
-}
-
-class _ActionChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0F4FA),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0x0F0D1B2E)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: const Color(0xFF3A5068)),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF29425D),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Event detail bottom sheet
@@ -1644,6 +1155,49 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
         );
       },
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    if (widget.event.id == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFF6F1EB),
+        title: const Text(
+          'Delete Event',
+          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0D1B2E)),
+        ),
+        content: const Text(
+          'Are you sure you want to permanently delete this event? This action cannot be undone.',
+          style: TextStyle(color: Color(0xFF3A5068)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF8A98A9), fontWeight: FontWeight.w700),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await widget.eventService.deleteEvent(widget.event.id!);
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Event deleted.')),
+        );
+      }
+    }
   }
 
   @override
@@ -1924,6 +1478,30 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
                           ),
                         ],
                       ),
+                      if (widget.event.id != null) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFD64545),
+                              side: const BorderSide(color: Color(0x30D64545)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            onPressed: () => _confirmDelete(context),
+                            icon: const Icon(Icons.delete_outline, size: 19),
+                            label: const Text(
+                              'Delete Event',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1972,7 +1550,7 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
               Positioned(
                 top: 12,
                 left: 14,
-                child: _CategoryBadge(label: widget.event.category),
+                child: OrganizerCategoryBadge(label: widget.event.category),
               ),
               // Expand hint icon
               Positioned(
@@ -2040,7 +1618,7 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
           Positioned(
             top: 12,
             left: 14,
-            child: _CategoryBadge(label: widget.event.category),
+            child: OrganizerCategoryBadge(label: widget.event.category),
           ),
           Positioned(
             right: 20,

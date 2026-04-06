@@ -280,7 +280,7 @@ class _AuthShellScreenState extends State<AuthShellScreen> {
                     const SizedBox(height: 14),
                     const Center(
                       child: Text(
-                        'UniHub',
+                        'Gatherly',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Color(0xFF111827),

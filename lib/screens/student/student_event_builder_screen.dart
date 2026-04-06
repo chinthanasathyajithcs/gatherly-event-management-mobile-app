@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -74,6 +75,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   bool _saving = false;
   bool _thinking = false;
   bool _uploadingPoster = false;
+  String? _clubId;
+  String? _clubName;
 
   static const int _builderStepsCount = 10;
 
@@ -798,6 +801,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         description: _description!,
         posterImageUrl: _normalizePosterUrl(_posterImageUrl),
         isQnaEnabled: _isQnaEnabled,
+        clubId: _clubId,
+        clubName: _clubName,
       );
       await _eventService.createEvent(event);
 
@@ -830,6 +835,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       _posterImageUrl = null;
       _isQnaEnabled = false;
       _qnaModeChosen = false;
+      _clubId = null;
+      _clubName = null;
       _step = _EventBuilderStep.category;
     });
     _addAssistant('Let us build a new event. First, pick a category.');
@@ -1473,6 +1480,59 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
             value: _isQnaEnabled ? 'Enabled' : 'Disabled',
           ),
           _SummaryLine(label: 'Description', value: _description ?? '-'),
+          const SizedBox(height: 12),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('clubs').orderBy('name').snapshots(),
+            builder: (context, snapshot) {
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: DropdownButtonFormField<String?>(
+                  value: _clubId,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Club (Optional)',
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'No club (Independent)',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                    ...docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return DropdownMenuItem<String?>(
+                        value: doc.id,
+                        child: Text(
+                          data['name']?.toString() ?? 'Unnamed club',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _clubId = val;
+                      if (val == null) {
+                        _clubName = null;
+                      } else {
+                        final data = docs.firstWhere((d) => d.id == val).data() as Map<String, dynamic>;
+                        _clubName = data['name']?.toString();
+                      }
+                    });
+                  },
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 8),
           _SummaryLine(
             label: 'Poster',

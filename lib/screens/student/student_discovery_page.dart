@@ -429,7 +429,17 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
             return categoryMatch && _matches(event, query);
           }).toList();
 
-          final now = DateTime.now();
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) return const SizedBox.shrink();
+
+          return StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+            builder: (context, userSnapshot) {
+              final userData = userSnapshot.data?.data() as Map<String, dynamic>?;
+              final prefsRaw = userData?['preferredCategories'];
+              final preferredCategories = (prefsRaw is List) ? List<String>.from(prefsRaw) : <String>[];
+
+              final now = DateTime.now();
           final liveEvents =
               filteredEvents.where((event) => _isLive(event, now)).toList();
 
@@ -458,13 +468,29 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
           }
 
           final featuredEvent = liveEvents.isNotEmpty ? liveEvents.first : null;
-          final personalizedEvents = upcomingEvents
+          List<EventModel> personalizedEvents = upcomingEvents
               .where(
                 (event) =>
                     !tomorrowEvents.any((tEvent) => tEvent.id == event.id),
               )
               .toList();
+              
           final isCategoryMode = _selectedCategory != 'All';
+
+          if (!isCategoryMode && preferredCategories.isNotEmpty) {
+            personalizedEvents = personalizedEvents
+                .where((e) => preferredCategories.contains(e.category))
+                .take(3)
+                .toList();
+          } else {
+            personalizedEvents = personalizedEvents.take(4).toList();
+          }
+              
+          final personalizedShownIds = personalizedEvents.map((e) => e.id).toSet();
+          final moreUpcomingEvents = upcomingEvents
+              .where((e) => !personalizedShownIds.contains(e.id))
+              .toList();
+              
           final filteredCount = filteredEvents.length;
 
           return ListView(
@@ -530,8 +556,8 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                       : 'Nothing live right now. Stay tuned.',
                   icon: Icons.videocam_off_rounded,
                 ),
-              const SizedBox(height: 10),
-              if (tomorrowEvents.isNotEmpty)
+              if (tomorrowEvents.isNotEmpty) ...[
+                const SizedBox(height: 10),
                 ValueListenableBuilder<int>(
                   valueListenable: _tomorrowSpotlightIndexNotifier,
                   builder: (context, spotlightIndex, _) {
@@ -564,9 +590,8 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                       ),
                     );
                   },
-                )
-              else
-                const _TomorrowEmptyCard(),
+                ),
+              ],
               const SizedBox(height: 10),
               _HostEventCard(
                 onTap: () {
@@ -595,8 +620,8 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                       : 'No upcoming events found. Try another category or search.',
                   icon: Icons.event_busy_rounded,
                 )
-              else
-                ...personalizedEvents.take(4).map(
+              else ...[
+                ...personalizedEvents.map(
                       (event) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: EventCard(
@@ -613,20 +638,18 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                         ),
                       ),
                     ),
+              ],
               
-              const SizedBox(height: 10),
-              _dottedDivider(),
-              const SizedBox(height: 24),
-              
-              _sectionHeader('All Upcoming Events', 'DISCOVER MORE'),
-              const SizedBox(height: 14),
-              if (upcomingEvents.isEmpty)
-                _emptyState(
-                  'No upcoming events found. Try another category or search.',
-                  icon: Icons.event_busy_rounded,
-                )
-              else
-                ...upcomingEvents.map(
+              if (moreUpcomingEvents.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _dottedDivider(),
+                const SizedBox(height: 24),
+                _sectionHeader(
+                  isCategoryMode ? 'More ${_selectedCategory}s' : 'All Upcoming Events', 
+                  'DISCOVER MORE'
+                ),
+                const SizedBox(height: 14),
+                ...moreUpcomingEvents.map(
                       (event) => Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: EventCard(
@@ -643,6 +666,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                         ),
                       ),
                     ),
+              ],
               const SizedBox(height: 10),
               _dottedDivider(),
               const SizedBox(height: 24),
@@ -650,38 +674,37 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
               const SizedBox(height: 14),
               if (endedEvents.isEmpty)
                 _emptyState(
-                  'No ended events yet.',
+                  isCategoryMode
+                      ? 'No ended ${_selectedCategory.toLowerCase()} events.'
+                      : 'No ended events.',
                   icon: Icons.history_rounded,
                 )
               else
-                ...endedEvents.map(
-                      (event) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Opacity(
-                          opacity: 0.65,
-                          child: EventCard(
-                            event: event,
-                            scheduleText: 'Ended',
-                            categoryColor: _upcomingBadgeColor(event.category),
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => _EventDetailsPage(event: event),
-                                ),
-                              );
-                            },
+                for (final event in endedEvents.take(5))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: EventCard(
+                      event: event,
+                      scheduleText: _upcomingScheduleText(event, now),
+                      categoryColor: const Color(0xFF8A98A9),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _EventDetailsPage(event: event),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
+                  ),
               ],
-              const SizedBox(height: 20),
             ],
           );
         },
-      ),
-    );
-  }
+      );
+      },
+    ),
+  );
+}
 
   Widget _buildSearchBar() {
     return Container(
@@ -944,7 +967,7 @@ class _FeaturedEventCard extends StatelessWidget {
                           runSpacing: 8,
                           children: [
                             if (isLive)
-                              _badge('LIVE NOW', const Color(0xFF0BA84F),
+                              _badge('LIVE NOW', const Color(0xFFCB6D22),
                                   Colors.white),
                             _badge(
                               event.category.toUpperCase(),
@@ -1328,61 +1351,6 @@ class _DashedRoundedRectPainter extends CustomPainter {
   }
 }
 
-class _TomorrowEmptyCard extends StatelessWidget {
-  const _TomorrowEmptyCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 124,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      color: _bgColor,
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'No events tomorrow',
-                  style: TextStyle(
-                    color: Color(0xFF545E6B),
-                    fontSize: 18,
-                    height: 1.02,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Check back later.',
-                  style: TextStyle(
-                    color: Color(0xFF7B8391),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: 6),
-          SizedBox(
-            width: 34,
-            height: 34,
-            child: Icon(
-              Icons.event_busy_rounded,
-              size: 30,
-              color: Color(0xFF8F98A6),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 
 class _EventDetailsPage extends StatefulWidget {
@@ -1733,6 +1701,14 @@ class _EventDetailsPageState extends State<_EventDetailsPage> {
                               value: '${event.durationHours} hours'),
                           const SizedBox(height: 10),
                           _DetailItem(label: 'Venue', value: venue),
+                          if (event.clubName != null && event.clubName!.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _DetailItem(label: 'Club', value: event.clubName!),
+                          ],
+                          if (event.hasParticipantLimit && event.attendeeCount != null) ...[
+                            const SizedBox(height: 10),
+                            _DetailItem(label: 'Joined', value: '${event.joinedParticipantCount} / ${event.attendeeCount}'),
+                          ],
                           const SizedBox(height: 12),
                           const Text(
                             'Category',
@@ -2246,7 +2222,7 @@ class _EventDetailsPageState extends State<_EventDetailsPage> {
                               ),
                             ),
                             child: const Text(
-                              'Join Event',
+                              'Register Event',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -2362,12 +2338,12 @@ class _PosterPreviewPage extends StatelessWidget {
 
       final now = DateTime.now();
       final name =
-          'unihub_poster_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+          'gatherly_poster_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
 
       try {
         await Gal.putImageBytes(
           posterBytes,
-          album: 'UniHub',
+          album: 'Gatherly',
           name: name,
         );
       } catch (_) {
@@ -2407,7 +2383,7 @@ class _PosterPreviewPage extends StatelessWidget {
       final posterBytes = await _fetchPosterBytes();
       final now = DateTime.now();
       final fileName =
-          'unihub_poster_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}.jpg';
+          'gatherly_poster_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}.jpg';
 
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}${Platform.pathSeparator}$fileName');
@@ -2416,7 +2392,7 @@ class _PosterPreviewPage extends StatelessWidget {
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path)],
-          text: 'Check out this event poster from UniHub.',
+          text: 'Check out this event poster from Gatherly.',
           title: 'Share Poster',
         ),
       );
