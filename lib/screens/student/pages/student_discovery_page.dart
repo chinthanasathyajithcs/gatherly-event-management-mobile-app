@@ -268,6 +268,119 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
     }
   }
 
+  IconData _categoryHeroIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'hackathon':
+        return Icons.terminal_rounded;
+      case 'workshop':
+        return Icons.build_rounded;
+      case 'seminar':
+        return Icons.mic_rounded;
+      case 'sports':
+        return Icons.sports_basketball_rounded;
+      default:
+        return Icons.auto_awesome_rounded;
+    }
+  }
+
+  String _categoryHeroSubtitle(String category) {
+    switch (category.toLowerCase()) {
+      case 'hackathon':
+        return 'Build fast, ship bold, and compete with top campus teams.';
+      case 'workshop':
+        return 'Hands-on sessions to sharpen real-world skills.';
+      case 'seminar':
+        return 'Insights, ideas, and expert sessions in one place.';
+      case 'sports':
+        return 'Energy-packed events to compete, play, and connect.';
+      default:
+        return 'Events curated for your current discovery mood.';
+    }
+  }
+
+  Widget _buildCategoryHero({
+    required String category,
+    required int eventCount,
+  }) {
+    final accent = _upcomingBadgeColor(category);
+    final icon = _categoryHeroIcon(category);
+    final subtitle = _categoryHeroSubtitle(category);
+    final countLabel = eventCount == 1 ? '1 event' : '$eventCount events';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: 0.17),
+            accent.withValues(alpha: 0.07),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.78),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: accent, size: 26),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$category Focus',
+                  style: const TextStyle(
+                    color: _textDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: _textMuted,
+                    fontSize: 12.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              countLabel,
+              style: TextStyle(
+                color: accent,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -334,6 +447,8 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                     !tomorrowEvents.any((tEvent) => tEvent.id == event.id),
               )
               .toList();
+          final isCategoryMode = _selectedCategory != 'All';
+          final filteredCount = filteredEvents.length;
 
           return ListView(
             padding: EdgeInsets.fromLTRB(
@@ -346,6 +461,13 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
               _buildSearchBar(),
               const SizedBox(height: 16),
               _buildCategories(),
+              if (isCategoryMode) ...[
+                const SizedBox(height: 14),
+                _buildCategoryHero(
+                  category: _selectedCategory,
+                  eventCount: filteredCount,
+                ),
+              ],
               const SizedBox(height: 26),
               _sectionHeader('Happening Now', 'CURATION'),
               const SizedBox(height: 14),
@@ -359,7 +481,9 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                 )
               else
                 _emptyState(
-                  'Nothing live right now. Stay tuned.',
+                  isCategoryMode
+                      ? 'No live ${_selectedCategory.toLowerCase()} events right now.'
+                      : 'Nothing live right now. Stay tuned.',
                   icon: Icons.videocam_off_rounded,
                 ),
               const SizedBox(height: 10),
@@ -405,11 +529,18 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                 },
               ),
               const SizedBox(height: 28),
-              _sectionHeader('Upcoming for You', 'PERSONALIZED'),
+              _sectionHeader(
+                isCategoryMode
+                    ? 'Upcoming in ${_selectedCategory}s'
+                    : 'Upcoming for You',
+                isCategoryMode ? 'FILTERED' : 'PERSONALIZED',
+              ),
               const SizedBox(height: 14),
               if (personalizedEvents.isEmpty)
                 _emptyState(
-                  'No upcoming events found. Try another category or search.',
+                  isCategoryMode
+                      ? 'No upcoming ${_selectedCategory.toLowerCase()} events found. Try All or another category.'
+                      : 'No upcoming events found. Try another category or search.',
                   icon: Icons.event_busy_rounded,
                 )
               else
