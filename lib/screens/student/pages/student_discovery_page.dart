@@ -829,63 +829,127 @@ class _HostEventCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      height: _secondaryCardHeight,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3E7DA),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: const Color(0xFFD9BFA5),
-          width: 1.2,
+      height: 134,
+      child: CustomPaint(
+        painter: const _DashedRoundedRectPainter(
+          color: Color(0xFFDCC5A7),
+          strokeWidth: 1.4,
+          dashLength: 5.5,
+          gapLength: 4.5,
+          radius: 24,
+        ),
+        child: Container(
+          margin: const EdgeInsets.all(2),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F1E9),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Host an Event?',
+                style: TextStyle(
+                  color: _primaryAccent,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Bring your vision to life on campus.',
+                style: TextStyle(
+                  color: _textMuted,
+                  fontSize: 12.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 30,
+                child: FilledButton(
+                  onPressed: onTap,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primaryAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text(
+                    'Get Started',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Host an Event?',
-            style: TextStyle(
-              color: _primaryAccent,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Bring your vision to life on campus.',
-            style: TextStyle(
-              color: _textMuted,
-              fontSize: 13,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 38,
-            child: FilledButton(
-              onPressed: onTap,
-              style: FilledButton.styleFrom(
-                backgroundColor: _primaryAccent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: const Text(
-                'Get Started',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
+  }
+}
+
+class _DashedRoundedRectPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double dashLength;
+  final double gapLength;
+  final double radius;
+
+  const _DashedRoundedRectPainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.dashLength,
+    required this.gapLength,
+    required this.radius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect.deflate(strokeWidth / 2),
+      Radius.circular(radius),
+    );
+    final path = Path()..addRRect(rrect);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final next = distance + dashLength;
+        canvas.drawPath(
+          metric.extractPath(distance, next.clamp(0, metric.length)),
+          paint,
+        );
+        distance = next + gapLength;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRoundedRectPainter oldDelegate) {
+    return color != oldDelegate.color ||
+        strokeWidth != oldDelegate.strokeWidth ||
+        dashLength != oldDelegate.dashLength ||
+        gapLength != oldDelegate.gapLength ||
+        radius != oldDelegate.radius;
   }
 }
 
