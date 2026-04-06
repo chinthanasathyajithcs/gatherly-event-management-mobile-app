@@ -41,6 +41,7 @@ class EventModel {
   final int? attendeeCount;
   final List<String> joinedParticipantIds;
   final int joinedParticipantCount;
+  final List<String> scheduledByIds;
   final String description;
   final EventApprovalStatus approvalStatus;
   final String? posterImageUrl;
@@ -65,6 +66,7 @@ class EventModel {
     this.attendeeCount,
     this.joinedParticipantIds = const [],
     this.joinedParticipantCount = 0,
+    this.scheduledByIds = const [],
     required this.description,
     this.approvalStatus = EventApprovalStatus.pending,
     this.posterImageUrl,
@@ -128,6 +130,9 @@ class EventModel {
       joinedParticipantCount: map['joinedParticipantCount'] as int? ??
           map['joinedStudentCount'] as int? ??
           joinedParticipants.length,
+      scheduledByIds: (map['scheduledByIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
       description: map['description'] as String? ?? '',
       approvalStatus: parseEventApprovalStatus(statusRaw),
       posterImageUrl: (map['posterImageUrl'] as String?)?.trim().isEmpty == true
@@ -159,6 +164,7 @@ class EventModel {
       'attendeeCount': hasParticipantLimit ? attendeeCount : null,
       'joinedParticipantIds': joinedParticipantIds,
       'joinedParticipantCount': joinedParticipantCount,
+      'scheduledByIds': scheduledByIds,
       'description': description,
       'approvalStatus': statusValue,
       'status': statusValue,

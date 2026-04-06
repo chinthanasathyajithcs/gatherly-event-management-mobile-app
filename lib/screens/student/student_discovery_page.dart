@@ -531,7 +531,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                             onTap: () {
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) => _EventDetailsPage(event: event),
+                                  builder: (_) => EventDetailsPage(event: event),
                                 ),
                               );
                             },
@@ -583,7 +583,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) =>
-                                  _EventDetailsPage(event: spotlightEvent),
+                                  EventDetailsPage(event: spotlightEvent),
                             ),
                           );
                         },
@@ -631,7 +631,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => _EventDetailsPage(event: event),
+                                builder: (_) => EventDetailsPage(event: event),
                               ),
                             );
                           },
@@ -659,7 +659,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => _EventDetailsPage(event: event),
+                                builder: (_) => EventDetailsPage(event: event),
                               ),
                             );
                           },
@@ -690,7 +690,7 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => _EventDetailsPage(event: event),
+                            builder: (_) => EventDetailsPage(event: event),
                           ),
                         );
                       },
@@ -900,7 +900,7 @@ class _FeaturedEventCard extends StatelessWidget {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => _EventDetailsPage(event: event),
+            builder: (_) => EventDetailsPage(event: event),
           ),
         );
       },
@@ -1353,16 +1353,16 @@ class _DashedRoundedRectPainter extends CustomPainter {
 
 
 
-class _EventDetailsPage extends StatefulWidget {
+class EventDetailsPage extends StatefulWidget {
   final EventModel event;
 
-  const _EventDetailsPage({required this.event});
+  const EventDetailsPage({required this.event});
 
   @override
-  State<_EventDetailsPage> createState() => _EventDetailsPageState();
+  State<EventDetailsPage> createState() => EventDetailsPageState();
 }
 
-class _EventDetailsPageState extends State<_EventDetailsPage> {
+class EventDetailsPageState extends State<EventDetailsPage> {
   final TextEditingController _feedbackController = TextEditingController();
   bool _sendingFeedback = false;
 
@@ -1425,6 +1425,140 @@ class _EventDetailsPageState extends State<_EventDetailsPage> {
       await ref.update({
         'likedBy': FieldValue.arrayUnion([uid]),
       });
+    }
+  }
+
+  // ── Schedule: bookmark without joining ──────────────────────────
+  Future<void> _addToSchedule() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
+    try {
+      await ref.update({'scheduledByIds': FieldValue.arrayUnion([uid])});
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Added to your schedule.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeFromSchedule() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
+    try {
+      await ref.update({'scheduledByIds': FieldValue.arrayRemove([uid])});
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Removed from your schedule.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
+  }
+
+  // ── Register: official attendance + auto-schedule ────────────────
+  Future<void> _registerEvent() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFF9F6F0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Confirm Registration',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF4A3A2C),
+            fontSize: 22,
+            letterSpacing: -0.5,
+          ),
+        ),
+        content: const Text(
+          'Are you sure you want to register for this event?',
+          style: TextStyle(
+            color: Color(0xFF7A6B5D),
+            fontSize: 15,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFAC5D20), fontWeight: FontWeight.bold),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFAC5D20),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
+    try {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Registering...')));
+
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final doc = await tx.get(ref);
+        if (!doc.exists) return;
+        final data = doc.data()!;
+        final joinedIds = List<String>.from(data['joinedParticipantIds'] ?? []);
+        final scheduledIds = List<String>.from(data['scheduledByIds'] ?? []);
+        var count = data['joinedParticipantCount'] as int? ?? joinedIds.length;
+
+        if (!joinedIds.contains(uid)) {
+          joinedIds.add(uid);
+          count++;
+        }
+        // Also auto-add to personal schedule
+        if (!scheduledIds.contains(uid)) {
+          scheduledIds.add(uid);
+        }
+
+        tx.update(ref, {
+          'joinedParticipantIds': joinedIds,
+          'joinedParticipantCount': count,
+          'scheduledByIds': scheduledIds,
+        });
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Registered! Event added to your schedule.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
     }
   }
 
@@ -2144,92 +2278,179 @@ class _EventDetailsPageState extends State<_EventDetailsPage> {
                     ),
                   )
               ] else ...[
-                if (!isAllocatedEvent)
-                  SizedBox(
-                    width: double.infinity,
-                    height: 46,
-                    child: FilledButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Added to your schedule.'),
-                          ),
-                        );
-                      },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _primaryAccent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
+                // ── Live Firestore state for button rendering ──────
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('events')
+                      .doc(event.id)
+                      .snapshots(),
+                  builder: (context, snap) {
+                    final data = snap.data?.data() as Map<String, dynamic>?;
+                    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+                    final scheduledIds = List<String>.from(
+                        data?['scheduledByIds'] ?? []);
+                    final joinedIds = List<String>.from(
+                        data?['joinedParticipantIds'] ?? []);
+
+                    final isScheduled = scheduledIds.contains(uid);
+                    final isRegistered = joinedIds.contains(uid);
+
+                    // ── Case 1: Already registered ─────────────────
+                    if (isRegistered) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5EF),
                           borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFB2DFCA)),
                         ),
-                      ),
-                      child: const Text(
-                        'Add to Schedule',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  )
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 46,
-                          child: OutlinedButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Added to your schedule.'),
-                                ),
-                              );
-                            },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _primaryAccent,
-                              side: const BorderSide(color: Color(0xFFD9BFA5)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_rounded,
+                                size: 18, color: Color(0xFF1A8A5A)),
+                            SizedBox(width: 8),
+                            Text(
+                              'Registered — see you there!',
+                              style: TextStyle(
+                                color: Color(0xFF1A8A5A),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            child: const Text(
-                              'Add to Schedule',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: SizedBox(
-                          height: 46,
-                          child: FilledButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Your presence has been counted.',
+                      );
+                    }
+
+                    // ── Case 2: Scheduled but NOT registered ───────
+                    if (isScheduled) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Remove from schedule (full width or left half)
+                          if (!isAllocatedEvent)
+                            SizedBox(
+                              height: 46,
+                              child: OutlinedButton.icon(
+                                onPressed: _removeFromSchedule,
+                                icon: const Icon(Icons.bookmark_remove_rounded, size: 18),
+                                label: const Text('Remove from Schedule',
+                                    style: TextStyle(fontWeight: FontWeight.w700)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFFCB6D22),
+                                  side: const BorderSide(color: Color(0xFFD9BFA5)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                ),
+                              ),
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _removeFromSchedule,
+                                      icon: const Icon(Icons.bookmark_remove_rounded, size: 16),
+                                      label: const Text('Remove',
+                                          style: TextStyle(fontWeight: FontWeight.w700)),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: const Color(0xFFCB6D22),
+                                        side: const BorderSide(color: Color(0xFFD9BFA5)),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(14)),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _primaryAccent,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: FilledButton(
+                                      onPressed: _registerEvent,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: _primaryAccent,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(14)),
+                                      ),
+                                      child: const Text('Register Event',
+                                          style: TextStyle(fontWeight: FontWeight.w700)),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: const Text(
-                              'Register Event',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                        ],
+                      );
+                    }
+
+                    // ── Case 3: Neither scheduled nor registered ───
+                    if (!isAllocatedEvent) {
+                      return SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: FilledButton.icon(
+                          onPressed: _addToSchedule,
+                          icon: const Icon(Icons.bookmark_add_rounded, size: 18),
+                          label: const Text('Add to Schedule',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _primaryAccent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                        ),
+                      );
+                    }
+
+                    // Allocated event — show both buttons
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 46,
+                            child: OutlinedButton.icon(
+                              onPressed: _addToSchedule,
+                              icon: const Icon(Icons.bookmark_add_rounded, size: 16),
+                              label: const Text('Add to Schedule',
+                                  style: TextStyle(fontWeight: FontWeight.w700)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _primaryAccent,
+                                side: const BorderSide(color: Color(0xFFD9BFA5)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: SizedBox(
+                            height: 46,
+                            child: FilledButton(
+                              onPressed: _registerEvent,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _primaryAccent,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
+                              child: const Text('Register Event',
+                                  style: TextStyle(fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ],
           ),
