@@ -56,6 +56,33 @@ class EventService {
     });
   }
 
+  Stream<List<EventModel>> streamEventsByStatus(EventApprovalStatus status) {
+    return _events
+        .where('approvalStatus', isEqualTo: status.value)
+        .snapshots()
+        .map((snapshot) {
+      final events = snapshot.docs.map(EventModel.fromDoc).toList();
+      events.sort((a, b) {
+        final aTime = a.createdAt?.toDate() ?? DateTime(2000);
+        final bTime = b.createdAt?.toDate() ?? DateTime(2000);
+        return bTime.compareTo(aTime);
+      });
+      return events;
+    });
+  }
+
+  Stream<List<EventModel>> streamPendingEvents() {
+    return streamEventsByStatus(EventApprovalStatus.pending);
+  }
+
+  Stream<List<EventModel>> streamAcceptedEvents() {
+    return streamEventsByStatus(EventApprovalStatus.accepted);
+  }
+
+  Stream<List<EventModel>> streamRejectedEvents() {
+    return streamEventsByStatus(EventApprovalStatus.rejected);
+  }
+
   Future<void> createEvent(EventModel event) async {
     await _events.add(event.toMap());
   }
@@ -64,9 +91,11 @@ class EventService {
     required String eventId,
     required EventApprovalStatus status,
   }) async {
+    final statusValue = status.value.trim();
     await _events.doc(eventId).update({
-      'approvalStatus': status.value,
-      'status': status.value,
+      'approvalStatus': statusValue,
+      'status': statusValue,
+      'approvalUpdatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -81,6 +110,13 @@ class EventService {
     return updateEventStatus(
       eventId: eventId,
       status: EventApprovalStatus.rejected,
+    );
+  }
+
+  Future<void> resetEventToPending(String eventId) {
+    return updateEventStatus(
+      eventId: eventId,
+      status: EventApprovalStatus.pending,
     );
   }
 
