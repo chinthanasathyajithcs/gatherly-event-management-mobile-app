@@ -1043,8 +1043,8 @@ class _TomorrowEmptyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: _secondaryCardHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      height: 124,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       color: _bgColor,
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1058,13 +1058,13 @@ class _TomorrowEmptyCard extends StatelessWidget {
                   'No events tomorrow',
                   style: TextStyle(
                     color: Color(0xFF545E6B),
-                    fontSize: 19,
-                    height: 1.08,
+                    fontSize: 18,
+                    height: 1.02,
                     fontWeight: FontWeight.w600,
                     letterSpacing: -0.3,
                   ),
                 ),
-                SizedBox(height: 6),
+                SizedBox(height: 4),
                 Text(
                   'Check back later.',
                   style: TextStyle(
@@ -1076,13 +1076,13 @@ class _TomorrowEmptyCard extends StatelessWidget {
               ],
             ),
           ),
-          SizedBox(width: 10),
+          SizedBox(width: 6),
           SizedBox(
-            width: 40,
-            height: 40,
+            width: 34,
+            height: 34,
             child: Icon(
               Icons.event_busy_rounded,
-              size: 34,
+              size: 30,
               color: Color(0xFF8F98A6),
             ),
           ),
@@ -1109,8 +1109,10 @@ class _UpcomingEventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasPoster =
         event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
-    final showAttending = event.joinedParticipantCount > 10;
-    final goingText = '${event.joinedParticipantCount} attending';
+    final isAllocatedEvent =
+        event.hasParticipantLimit && (event.attendeeCount ?? 0) > 0;
+    final joinedText =
+        '${event.joinedParticipantCount}/${event.attendeeCount ?? event.joinedParticipantCount} has joined';
 
     return Material(
       color: Colors.transparent,
@@ -1220,7 +1222,7 @@ class _UpcomingEventCard extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (showAttending) ...[
+                        if (isAllocatedEvent) ...[
                           const Text(
                             '•',
                             style: TextStyle(
@@ -1230,7 +1232,7 @@ class _UpcomingEventCard extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            goingText,
+                            joinedText,
                             style: const TextStyle(
                               color: _textMuted,
                               fontSize: 12,
@@ -1300,6 +1302,8 @@ class _EventDetailsPage extends StatelessWidget {
     final hasPoster =
         event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty;
     final venue = event.location.trim().isEmpty ? 'TBA' : event.location;
+    final isAllocatedEvent =
+        event.hasParticipantLimit && (event.attendeeCount ?? 0) > 0;
 
     return Scaffold(
       backgroundColor: _bgColor,
@@ -1435,6 +1439,93 @@ class _EventDetailsPage extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+              if (!isAllocatedEvent)
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: FilledButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Added to your schedule.'),
+                        ),
+                      );
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _primaryAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Add to Schedule',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 46,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Added to your schedule.'),
+                              ),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primaryAccent,
+                            side: const BorderSide(color: Color(0xFFD9BFA5)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: const Text(
+                            'Add to Schedule',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 46,
+                        child: FilledButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Your presence has been counted.',
+                                ),
+                              ),
+                            );
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _primaryAccent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: const Text(
+                            'Join Event',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
