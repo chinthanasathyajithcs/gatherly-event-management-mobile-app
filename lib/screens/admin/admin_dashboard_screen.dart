@@ -6,7 +6,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/event_service.dart';
 import '../auth/auth_shell_screen.dart';
-import '../club.dart';
+import 'club_screen.dart';
 import '../student/student_dashboard_screen.dart';
 
 String _formatDate(DateTime date) {
@@ -135,6 +135,91 @@ class AdminDashboardScreen extends StatelessWidget {
     }
   }
 
+  void _showAdminMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 48,
+                  height: 6,
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8D5C4),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                _MenuOption(
+                  icon: Icons.person_outline_rounded,
+                  label: 'View as student',
+                  color: const Color(0xFF0D1B2E),
+                  bgColor: const Color(0xFFF6F1EB),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
+                      (_) => false,
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _MenuOption(
+                  icon: Icons.groups_rounded,
+                  label: 'Manage clubs',
+                  color: const Color(0xFF0D1B2E),
+                  bgColor: const Color(0xFFF6F1EB),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ClubScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _MenuOption(
+                  icon: Icons.person_add_alt_1_rounded,
+                  label: 'Promote to admin',
+                  color: const Color(0xFFCB6D22),
+                  bgColor: const Color(0xFFCB6D22).withOpacity(0.12),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showAddAdminDialog(context);
+                  },
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Divider(color: Color(0xFFE8D5C4), height: 1),
+                ),
+                _MenuOption(
+                  icon: Icons.logout_rounded,
+                  label: 'Sign Out',
+                  color: const Color(0xFF9C2214),
+                  bgColor: const Color(0xFFFFECE6),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _handleSignOut(context);
+                  },
+                ),
+              ],
+            ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -150,54 +235,13 @@ class AdminDashboardScreen extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           actions: [
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'student') {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(
-                        builder: (_) => const StudentDashboardScreen()),
-                    (_) => false,
-                  );
-                } else if (value == 'promote') {
-                  _showAddAdminDialog(context);
-                } else if (value == 'logout') {
-                  _handleSignOut(context);
-                }
-              },
-              itemBuilder: (BuildContext context) => [
-                const PopupMenuItem<String>(
-                  value: 'student',
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_outline, size: 18),
-                      SizedBox(width: 12),
-                      Text('View as student'),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem<String>(
-                  value: 'promote',
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_add_alt_1_rounded, size: 18),
-                      SizedBox(width: 12),
-                      Text('Promote student to admin'),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem<String>(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout_rounded, size: 18),
-                      SizedBox(width: 12),
-                      Text('Sign Out'),
-                    ],
-                  ),
-                ),
-              ],
+            IconButton(
+              icon: const Icon(
+                Icons.grid_view_rounded,
+                color: Color(0xFF0D1B2E),
+                size: 26,
+              ),
+              onPressed: () => _showAdminMenu(context),
             ),
             const SizedBox(width: 8),
           ],
@@ -250,20 +294,12 @@ class AdminDashboardScreen extends StatelessWidget {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ClubScreen()),
-          ),
-          child: const Icon(Icons.add),
-          backgroundColor: const Color(0xFFCB6D22),
-        ),
       ),
     );
   }
 }
 
-class _AdminEventTab extends StatelessWidget {
+class _AdminEventTab extends StatefulWidget {
   const _AdminEventTab({
     required this.title,
     required this.subtitle,
@@ -279,9 +315,58 @@ class _AdminEventTab extends StatelessWidget {
   final Stream<List<EventModel>> Function() eventFetcher;
 
   @override
+  State<_AdminEventTab> createState() => _AdminEventTabState();
+}
+
+class _AdminEventTabState extends State<_AdminEventTab> {
+  final Set<String> _processingEventIds = <String>{};
+
+  bool _isProcessing(String? eventId) {
+    if (eventId == null) return false;
+    return _processingEventIds.contains(eventId);
+  }
+
+  Future<void> _runAction({
+    required EventModel event,
+    required String successMessage,
+    required String failurePrefix,
+    required Future<void> Function(String eventId) operation,
+  }) async {
+    final eventId = event.id;
+    if (eventId == null || eventId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to process event without an id.')),
+      );
+      return;
+    }
+
+    if (_processingEventIds.contains(eventId)) return;
+
+    setState(() => _processingEventIds.add(eventId));
+
+    try {
+      await operation(eventId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(successMessage)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$failurePrefix$error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _processingEventIds.remove(eventId));
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<EventModel>>(
-      stream: eventFetcher(),
+      stream: widget.eventFetcher(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -315,7 +400,7 @@ class _AdminEventTab extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
           children: [
             Text(
-              title,
+              widget.title,
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -324,7 +409,7 @@ class _AdminEventTab extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              subtitle,
+              widget.subtitle,
               style: const TextStyle(
                 fontSize: 14,
                 color: Color(0xFF7B6E63),
@@ -337,9 +422,9 @@ class _AdminEventTab extends StatelessWidget {
                 children: [
                   const SizedBox(height: 60),
                   Icon(
-                    status == EventApprovalStatus.pending
+                    widget.status == EventApprovalStatus.pending
                         ? Icons.event_available_rounded
-                        : status == EventApprovalStatus.accepted
+                        : widget.status == EventApprovalStatus.accepted
                             ? Icons.celebration_rounded
                             : Icons.event_busy_rounded,
                     size: 64,
@@ -347,9 +432,9 @@ class _AdminEventTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    status == EventApprovalStatus.pending
+                    widget.status == EventApprovalStatus.pending
                         ? 'No pending events right now.'
-                        : status == EventApprovalStatus.accepted
+                        : widget.status == EventApprovalStatus.accepted
                             ? 'No approved events yet.'
                             : 'No rejected events yet.',
                     style: const TextStyle(
@@ -360,9 +445,9 @@ class _AdminEventTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    status == EventApprovalStatus.pending
+                    widget.status == EventApprovalStatus.pending
                         ? 'When students submit events, they will appear here for approval.'
-                        : status == EventApprovalStatus.accepted
+                        : widget.status == EventApprovalStatus.accepted
                             ? 'Approved events appear here after admin review.'
                             : 'Rejected events appear here after admin review.',
                     textAlign: TextAlign.center,
@@ -381,66 +466,36 @@ class _AdminEventTab extends StatelessWidget {
                   categoryColor: _categoryColor(event.category),
                   dateText: _formatDate(event.date),
                   timeText: _formatTime(event.time),
-                  showActions: showActions,
+                  showActions: widget.showActions,
+                  isProcessing: _isProcessing(event.id),
                   onApprove: () async {
-                    if (!showActions) return;
-                    try {
-                      await EventService().approveEvent(event.id!);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Approved "${event.name}"'),
-                        ),
-                      );
-                    } catch (error) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Failed to approve event: $error'),
-                        ),
-                      );
-                    }
+                    if (!widget.showActions) return;
+                    await _runAction(
+                      event: event,
+                      successMessage: 'Approved "${event.name}"',
+                      failurePrefix: 'Failed to approve event: ',
+                      operation: EventService().approveEvent,
+                    );
                   },
                   onReject: () async {
-                    if (!showActions) return;
+                    if (!widget.showActions) return;
                     final confirmed = await _confirmReject(context);
                     if (!confirmed) return;
-
-                    try {
-                      await EventService().rejectEvent(event.id!);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Rejected "${event.name}"'),
-                        ),
-                      );
-                    } catch (error) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Failed to reject event: $error'),
-                        ),
-                      );
-                    }
+                    await _runAction(
+                      event: event,
+                      successMessage: 'Rejected "${event.name}"',
+                      failurePrefix: 'Failed to reject event: ',
+                      operation: EventService().rejectEvent,
+                    );
                   },
                   onSetPending: () async {
-                    if (!showActions) return;
-                    try {
-                      await EventService().resetEventToPending(event.id!);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Set "${event.name}" to pending'),
-                        ),
-                      );
-                    } catch (error) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Failed to set pending: $error'),
-                        ),
-                      );
-                    }
+                    if (!widget.showActions) return;
+                    await _runAction(
+                      event: event,
+                      successMessage: 'Set "${event.name}" to pending',
+                      failurePrefix: 'Failed to set pending: ',
+                      operation: EventService().resetEventToPending,
+                    );
                   },
                 );
               }).toList(),
@@ -528,9 +583,60 @@ class _AddAdminDialogState extends State<_AddAdminDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Promote student to admin'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+      ),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text(
+                'Promote to admin',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0D1B2E),
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Give a user admin privileges',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF7B6E63),
+                ),
+              ),
+            ],
+          ),
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            icon: const Icon(Icons.close_rounded,
+                color: Color(0xFF7B6E63), size: 24),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFF6F1EB),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.all(10),
+            ),
+          ),
+        ],
+      ),
       content: SizedBox(
-        width: 400,
+        width: MediaQuery.of(context).size.width * 0.95,
+        height: MediaQuery.of(context).size.height * 0.65,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -544,167 +650,296 @@ class _AddAdminDialogState extends State<_AddAdminDialog> {
                     color: const Color(0xFFFFECE6),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(
-                      color: Color(0xFF9C2214),
-                      fontSize: 13,
-                    ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: Color(0xFF9C2214), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFF9C2214),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
               ],
               if (_selectedStudent == null) ...[
-                const Text(
-                  'Search student by name or email',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF7B6E63)),
-                ),
-                const SizedBox(height: 8),
                 CustomTextField(
-                  label: 'Student name or email',
-                  hint: 'e.g. john@example.com or John Doe',
+                  label: 'Search Student',
+                  hint: 'Enter name or email address',
                   controller: _searchController,
                   icon: Icons.search_rounded,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 if (_isSearching)
                   const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                        strokeWidth: 3,
                         valueColor:
                             AlwaysStoppedAnimation<Color>(Color(0xFFCB6D22)),
                       ),
                     ),
                   )
-                else if (_searchResults.isEmpty && _searchController.text.isNotEmpty)
+                else if (_searchResults.isEmpty &&
+                    _searchController.text.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Center(
-                      child: Text(
-                        'No students found matching "${_searchController.text}"',
-                        style: const TextStyle(
-                          color: Color(0xFF7B6E63),
-                          fontSize: 13,
-                        ),
-                        textAlign: TextAlign.center,
+                      child: Column(
+                        children: [
+                          const Icon(Icons.person_off_rounded,
+                              size: 40, color: Color(0xFFD6C8BB)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No student found for "${_searchController.text}"',
+                            style: const TextStyle(
+                              color: Color(0xFF7B6E63),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
                     ),
                   )
                 else if (_searchResults.isNotEmpty)
                   Column(
-                    children: _searchResults
-                        .map((student) => Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: const Color(0xFFE0E0E0)),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                leading: Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFCB6D22),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      (student.name?.isNotEmpty ?? false)
-                                          ? student.name![0].toUpperCase()
-                                          : (student.email.isNotEmpty
-                                              ? student.email[0].toUpperCase()
-                                              : 'U'),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Search Results',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF7B6E63)),
+                      ),
+                      const SizedBox(height: 12),
+                      ..._searchResults.map((student) => Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                              border: Border.all(
+                                  color: const Color(0xFFF0EBE6), width: 1.5),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: _isPromoting
+                                    ? null
+                                    : () => setState(
+                                        () => _selectedStudent = student),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFF2E7),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            (student.name?.isNotEmpty ?? false)
+                                                ? student.name![0].toUpperCase()
+                                                : (student.email.isNotEmpty
+                                                    ? student.email[0]
+                                                        .toUpperCase()
+                                                    : 'U'),
+                                            style: const TextStyle(
+                                              color: Color(0xFFCB6D22),
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 18,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                ),
-                                title: Text(
-                                  student.name?.isNotEmpty == true
-                                      ? student.name!
-                                      : student.email,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF0D1B2E),
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  student.email,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF7B6E63),
-                                  ),
-                                ),
-                                trailing: ElevatedButton(
-                                  onPressed: _isPromoting
-                                      ? null
-                                      : () => setState(() => _selectedStudent = student),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFCB6D22),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 8),
-                                  ),
-                                  child: const Text(
-                                    'Select',
-                                    style: TextStyle(fontSize: 12),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              student.name?.isNotEmpty == true
+                                                  ? student.name!
+                                                  : student.email,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 15,
+                                                color: Color(0xFF0D1B2E),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              student.email,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Color(0xFF7B6E63),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFCB6D22),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: const Text(
+                                          'Select',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ))
-                        .toList(),
+                            ),
+                          )),
+                    ],
                   ),
               ] else ...[
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0F4F8),
-                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFF6F1EB),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE8E1D9)),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      if (_selectedStudent != null) ...[
-                        Text(
-                          _selectedStudent!.name?.isNotEmpty == true
-                              ? _selectedStudent!.name!
-                              : _selectedStudent!.email,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0D1B2E),
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFCB6D22),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFCB6D22).withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            (_selectedStudent!.name?.isNotEmpty ?? false)
+                                ? _selectedStudent!.name![0].toUpperCase()
+                                : (_selectedStudent!.email.isNotEmpty
+                                    ? _selectedStudent!.email[0].toUpperCase()
+                                    : 'U'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 20,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _selectedStudent!.email,
-                          style: const TextStyle(
-                            color: Color(0xFF7B6E63),
-                            fontSize: 13,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selectedStudent!.name?.isNotEmpty == true
+                                  ? _selectedStudent!.name!
+                                  : _selectedStudent!.email,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0D1B2E),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _selectedStudent!.email,
+                              style: const TextStyle(
+                                color: Color(0xFF7B6E63),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () =>
+                            setState(() => _selectedStudent = null),
+                        icon: const Icon(Icons.edit_rounded,
+                            size: 20, color: Color(0xFFCB6D22)),
+                        tooltip: 'Change Student',
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFECE6),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFD4C8)),
                   ),
-                  child: const Text(
-                    'This student will be promoted to admin and can access the admin dashboard immediately.',
-                    style: TextStyle(
-                      color: Color(0xFF9C2214),
-                      fontSize: 12,
-                    ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Icon(Icons.admin_panel_settings_rounded,
+                          color: Color(0xFFCB6D22), size: 24),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'This student will be promoted to admin. They will immediately gain full access to the admin dashboard and can approve or reject events.',
+                          style: TextStyle(
+                            color: Color(0xFF9C2214),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -712,34 +947,77 @@ class _AddAdminDialogState extends State<_AddAdminDialog> {
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed:
-              _isPromoting ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        if (_selectedStudent != null)
-          ElevatedButton(
-            onPressed: _isPromoting ? null : () => _promoteToAdmin(_selectedStudent!),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFCB6D22),
-            ),
-            child: _isPromoting
-                ? const SizedBox(
-                    width: 60,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                : const Text('Confirm Promote'),
-          ),
-      ],
+      actions: _selectedStudent == null
+          ? [
+              TextButton(
+                onPressed: _isPromoting
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF7B6E63),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Cancel',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: _isPromoting
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF7B6E63),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Cancel',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _isPromoting
+                    ? null
+                    : () => _promoteToAdmin(_selectedStudent!),
+                icon: _isPromoting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Icon(Icons.verified_user_rounded, size: 20),
+                label: Text(
+                  _isPromoting ? 'Promoting...' : 'Confirm Promote',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFCB6D22),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
     );
   }
 }
-
 
 class _AdminEventCard extends StatelessWidget {
   const _AdminEventCard({
@@ -748,6 +1026,7 @@ class _AdminEventCard extends StatelessWidget {
     required this.dateText,
     required this.timeText,
     required this.showActions,
+    required this.isProcessing,
     required this.onApprove,
     required this.onReject,
     required this.onSetPending,
@@ -758,6 +1037,7 @@ class _AdminEventCard extends StatelessWidget {
   final String dateText;
   final String timeText;
   final bool showActions;
+  final bool isProcessing;
   final VoidCallback onApprove;
   final VoidCallback onReject;
   final VoidCallback onSetPending;
@@ -904,7 +1184,7 @@ class _AdminEventCard extends StatelessWidget {
                 if (event.approvalStatus == EventApprovalStatus.pending) ...[
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onReject,
+                      onPressed: isProcessing ? null : onReject,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFCB6D22),
                         side: const BorderSide(color: Color(0xFFCB6D22)),
@@ -921,7 +1201,7 @@ class _AdminEventCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: onApprove,
+                      onPressed: isProcessing ? null : onApprove,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFCB6D22),
                         foregroundColor: Colors.white,
@@ -929,16 +1209,26 @@ class _AdminEventCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Approve'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: isProcessing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Approve'),
                       ),
                     ),
                   ),
-                ] else if (event.approvalStatus == EventApprovalStatus.accepted) ...[
+                ] else if (event.approvalStatus ==
+                    EventApprovalStatus.accepted) ...[
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onReject,
+                      onPressed: isProcessing ? null : onReject,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFCB6D22),
                         side: const BorderSide(color: Color(0xFFCB6D22)),
@@ -955,7 +1245,7 @@ class _AdminEventCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onSetPending,
+                      onPressed: isProcessing ? null : onSetPending,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF4F4F4F),
                         side: const BorderSide(color: Color(0xFFB0B0B0)),
@@ -969,10 +1259,11 @@ class _AdminEventCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                ] else if (event.approvalStatus == EventApprovalStatus.rejected) ...[
+                ] else if (event.approvalStatus ==
+                    EventApprovalStatus.rejected) ...[
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: onApprove,
+                      onPressed: isProcessing ? null : onApprove,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFCB6D22),
                         foregroundColor: Colors.white,
@@ -980,16 +1271,25 @@ class _AdminEventCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Approve'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: isProcessing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Approve'),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onSetPending,
+                      onPressed: isProcessing ? null : onSetPending,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF4F4F4F),
                         side: const BorderSide(color: const Color(0xFFB0B0B0)),
@@ -1007,6 +1307,69 @@ class _AdminEventCard extends StatelessWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _MenuOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color bgColor;
+  final VoidCallback onTap;
+
+  const _MenuOption({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.bgColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF0EBE6), width: 1.5),
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.015),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 22, color: color),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: color.withOpacity(0.4), size: 24),
+          ],
+        ),
       ),
     );
   }
