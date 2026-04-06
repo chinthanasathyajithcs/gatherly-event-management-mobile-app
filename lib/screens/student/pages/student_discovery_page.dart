@@ -1423,35 +1423,91 @@ class _EventDetailsPage extends StatelessWidget {
               const SizedBox(height: 18),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFFFFEFD),
+                      Color(0xFFF6F3EF),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE7D7C9)),
+                  border: Border.all(color: const Color(0xE6E6DFD7)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x120D1B2E),
+                      blurRadius: 18,
+                      offset: Offset(0, 9),
+                    ),
+                  ],
                 ),
                 child: Stack(
                   children: [
-                    const Positioned(
-                      right: 0,
-                      top: 0,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Color(0x16CB6D22),
-                          shape: BoxShape.circle,
-                        ),
-                        child: SizedBox(
-                          width: 84,
-                          height: 84,
-                          child: Icon(
-                            Icons.event_available_rounded,
-                            size: 38,
-                            color: Color(0x62CB6D22),
-                          ),
+                    Positioned(
+                      right: -124,
+                      top: -20,
+                      child: SizedBox(
+                        width: 300,
+                        height: 300,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(
+                              width: 300,
+                              height: 300,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0x26CB6D22),
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: 236,
+                              height: 236,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0x30CB6D22),
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: 174,
+                              height: 174,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0x3CCB6D22),
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: 118,
+                              height: 118,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  center: Alignment(-0.3, -0.3),
+                                  radius: 0.95,
+                                  colors: [
+                                    Color(0x2CFFEED7),
+                                    Color(0x26DEA26B),
+                                    Color(0x1ACB6D22),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(right: 96),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 112, 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1478,8 +1534,16 @@ class _EventDetailsPage extends StatelessWidget {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: _primaryAccent.withValues(alpha: 0.14),
+                              gradient: LinearGradient(
+                                colors: [
+                                  _primaryAccent.withValues(alpha: 0.2),
+                                  _primaryAccent.withValues(alpha: 0.12),
+                                ],
+                              ),
                               borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: _primaryAccent.withValues(alpha: 0.22),
+                              ),
                             ),
                             child: Text(
                               event.category.toUpperCase(),
