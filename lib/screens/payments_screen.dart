@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_paypal/flutter_paypal.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import '../services/paypal_checkout_service.dart';
 
 class PaymentsScreen extends StatelessWidget {
   const PaymentsScreen({super.key});
@@ -136,7 +136,7 @@ class PaymentsScreen extends StatelessWidget {
             _PaymentActionCard(
               icon: Icons.payment_rounded,
               title: 'Test Payment',
-              subtitle: 'Make a test PayPal transaction (\$1.00)',
+              subtitle: 'Make a test PayPal transaction (USD 1.00)',
               onTap: () => _makeTestPayment(context),
             ),
           ],
@@ -146,62 +146,44 @@ class PaymentsScreen extends StatelessWidget {
   }
 
   void _makeTestPayment(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (BuildContext ctx) => UsePaypal(
-          sandboxMode: true,
-          clientId: dotenv.env['PAYPAL_CLIENT_ID'] ?? "",
-          secretKey: dotenv.env['PAYPAL_SECRET'] ?? "",
-          returnURL: "https://samplesite.com/return",
-          cancelURL: "https://samplesite.com/cancel",
-          transactions: const [
-            {
-              "amount": {
-                "total": '1.00',
-                "currency": "USD",
-                "details": {
-                  "subtotal": '1.00',
-                  "shipping": '0',
-                  "shipping_discount": 0,
-                },
-              },
-              "description": "Test Payment from Gatherly",
-              "item_list": {
-                "items": [
-                  {
-                    "name": "Test Payment",
-                    "quantity": 1,
-                    "price": '1.00',
-                    "currency": "USD",
-                  },
-                ],
-              },
+    PayPalCheckoutService.showCheckout(
+      context: context,
+      transactions: const [
+        {
+          'amount': {
+            'total': '1.00',
+            'currency': 'USD',
+            'details': {
+              'subtotal': '1.00',
+              'shipping': '0',
+              'shipping_discount': 0,
             },
-          ],
-          note: "Test payment from Gatherly app.",
-          onSuccess: (Map params) async {
-            Navigator.of(ctx).push(
-              MaterialPageRoute(
-                builder: (_) => _PaymentResultPage(
-                  success: true,
-                  data: params,
-                ),
-              ),
-            );
           },
-          onError: (error) {
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              const SnackBar(content: Text('Payment Error')),
-            );
+          'description': 'Test Payment from Gatherly',
+          'item_list': {
+            'items': [
+              {
+                'name': 'Test Payment',
+                'quantity': 1,
+                'price': '1.00',
+                'currency': 'USD',
+              },
+            ],
           },
-          onCancel: (params) {
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              const SnackBar(content: Text('Payment Cancelled')),
-            );
-          },
+        },
+      ],
+      note: 'Test payment from Gatherly app.',
+    ).then((params) {
+      if (params == null || !context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _PaymentResultPage(
+            success: true,
+            data: params,
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 }
 

@@ -138,6 +138,8 @@ class EventService {
     String? description,
     bool? hasParticipantLimit,
     int? attendeeCount,
+    bool? isPaidEvent,
+    double? entryFee,
     List<String>? coHostIds,
     Map<String, String>? coHostNamesById,
     bool resetApproval = false,
@@ -166,6 +168,15 @@ class EventService {
     if (attendeeCount != null) {
       updates['attendeeCount'] = attendeeCount;
     }
+    if (isPaidEvent != null) {
+      updates['isPaidEvent'] = isPaidEvent;
+      if (!isPaidEvent) {
+        updates['entryFee'] = null;
+      }
+    }
+    if (entryFee != null) {
+      updates['entryFee'] = entryFee;
+    }
     if (coHostIds != null) {
       updates['coHostIds'] = coHostIds;
     }
@@ -187,7 +198,9 @@ class EventService {
   }
 
   Future<void> joinEvent(
-      {required String eventId, required String userId}) async {
+      {required String eventId,
+      required String userId,
+      Map<String, dynamic>? paymentDetails}) async {
     final docRef = _events.doc(eventId);
 
     await _firestore.runTransaction((tx) async {
@@ -197,6 +210,7 @@ class EventService {
       }
 
       final map = snapshot.data() ?? <String, dynamic>{};
+      final isPaidEvent = map['isPaidEvent'] as bool? ?? false;
       final hasLimit = map['hasParticipantLimit'] as bool? ?? false;
       final limit = map['attendeeCount'] as int?;
       final joined = (map['joinedParticipantIds'] as List<dynamic>? ??
@@ -204,18 +218,37 @@ class EventService {
               const [])
           .whereType<String>()
           .toList();
+      final updates = <String, dynamic>{
+        'scheduledByIds': FieldValue.arrayUnion([userId]),
+      };
 
-      if (joined.contains(userId)) return;
-
-      if (hasLimit && limit != null && joined.length >= limit) {
-        throw StateError('Participant limit reached for this event.');
+      if (isPaidEvent && paymentDetails == null) {
+        throw StateError('Payment is required for this event.');
       }
 
-      tx.update(docRef, {
-        'joinedParticipantIds': FieldValue.arrayUnion([userId]),
-        'joinedParticipantCount': FieldValue.increment(1),
-      });
+      if (!joined.contains(userId)) {
+        if (hasLimit && limit != null && joined.length >= limit) {
+          throw StateError('Participant limit reached for this event.');
+        }
+
+        updates['joinedParticipantIds'] = FieldValue.arrayUnion([userId]);
+        updates['joinedParticipantCount'] = FieldValue.increment(1);
+      }
+
+      tx.update(docRef, updates);
     });
+
+    await docRef.collection('registrations').doc(userId).set({
+      'userId': userId,
+      'eventId': eventId,
+      'paymentRequired': paymentDetails != null,
+      'paymentStatus': paymentDetails == null ? 'not_required' : 'paid',
+      'paymentProvider': paymentDetails?['paymentProvider'] ?? 'paypal',
+      'paymentAmount': paymentDetails?['amount'],
+      'currency': paymentDetails?['currency'] ?? 'LKR',
+      'paymentTransactionId': paymentDetails?['transactionId'],
+      'registeredAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> leaveEvent(
@@ -240,7 +273,10 @@ class EventService {
       tx.update(docRef, {
         'joinedParticipantIds': FieldValue.arrayRemove([userId]),
         'joinedParticipantCount': FieldValue.increment(-1),
+        'scheduledByIds': FieldValue.arrayRemove([userId]),
       });
     });
+
+    await docRef.collection('registrations').doc(userId).delete();
   }
 }

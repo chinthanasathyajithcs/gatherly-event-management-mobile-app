@@ -24,6 +24,8 @@ class QRGeneratorDialog extends StatelessWidget {
       "uid": uid,
       "eventId": event.id ?? '',
       "name": studentName,
+      "paid": event.isPaidEvent,
+      "entryFee": event.entryFee,
     });
   }
 
@@ -63,8 +65,8 @@ class QRGeneratorDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "Your QR Ticket",
+            Text(
+              event.isPaidEvent ? 'Your Event Ticket' : 'Your QR Ticket',
               style: TextStyle(
                 color: Color(0xFF0D1B2E),
                 fontWeight: FontWeight.w800,
@@ -95,6 +97,18 @@ class QRGeneratorDialog extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
+            if (event.isPaidEvent) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Paid ticket • Rs. ${event.entryFee?.toStringAsFixed(2) ?? '0.00'}',
+                style: const TextStyle(
+                  color: Color(0xFF1A8A5A),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
@@ -120,7 +134,8 @@ class QRGeneratorDialog extends StatelessWidget {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFCB6D22)),
+                  Icon(Icons.info_outline_rounded,
+                      size: 14, color: Color(0xFFCB6D22)),
                   SizedBox(width: 6),
                   Text(
                     'Show this to the host at the venue',

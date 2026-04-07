@@ -227,7 +227,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     final aiHasLimit = _extractBool(extracted['hasParticipantLimit']);
     final aiAttendeeCount = _extractInt(extracted['attendeeCount']);
     final aiIsQnaEnabled = _extractBool(extracted['isQnaEnabled']);
-    final aiIsQrAttendanceEnabled = _extractBool(extracted['isQrAttendanceEnabled']);
+    final aiIsQrAttendanceEnabled =
+        _extractBool(extracted['isQrAttendanceEnabled']);
 
     if (_tryPlannerAdvanceFromAi(
       aiCategory: aiCategory,
@@ -315,7 +316,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         final extractedDuration = RegExp(r'\d+').firstMatch(input)?.group(0);
         final parsedDuration = int.tryParse(extractedDuration ?? '');
         if (parsedDuration == null || parsedDuration <= 0) {
-          _addAssistant('Please enter a valid duration in hours. Example: 2, 4');
+          _addAssistant(
+              'Please enter a valid duration in hours. Example: 2, 4');
           return;
         }
         _durationHours = parsedDuration;
@@ -399,7 +401,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         }
         _description = candidateDescription;
         _step = _EventBuilderStep.qnaMode;
-        _addAssistant('Perfect. Will this event feature a live Q&A session? Reply yes or no.');
+        _addAssistant(
+            'Perfect. Will this event feature a live Q&A session? Reply yes or no.');
         break;
       case _EventBuilderStep.qnaMode:
         final normalized = input.toLowerCase();
@@ -412,7 +415,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _isQnaEnabled = true;
           _qnaModeChosen = true;
           _step = _EventBuilderStep.qrAttendanceMode;
-          _addAssistant('Live Q&A enabled. Will this event require QR code check-in for attendance? Reply yes or no.');
+          _addAssistant(
+              'Live Q&A enabled. Will this event require QR code check-in for attendance? Reply yes or no.');
           return;
         }
 
@@ -420,7 +424,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _isQnaEnabled = false;
           _qnaModeChosen = true;
           _step = _EventBuilderStep.qrAttendanceMode;
-          _addAssistant('Live Q&A skipped. Will this event require QR code check-in for attendance? Reply yes or no.');
+          _addAssistant(
+              'Live Q&A skipped. Will this event require QR code check-in for attendance? Reply yes or no.');
           return;
         }
 
@@ -437,7 +442,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _isQrAttendanceEnabled = true;
           _qrAttendanceModeChosen = true;
           _step = _EventBuilderStep.isPaidMode;
-          _addAssistant('QR check-in enabled. Is this a paid event? Reply yes or no.');
+          _addAssistant(
+              'QR check-in enabled. Is this a paid event? Reply yes or no.');
           return;
         }
 
@@ -445,7 +451,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _isQrAttendanceEnabled = false;
           _qrAttendanceModeChosen = true;
           _step = _EventBuilderStep.isPaidMode;
-          _addAssistant('QR check-in skipped. Is this a paid event? Reply yes or no.');
+          _addAssistant(
+              'QR check-in skipped. Is this a paid event? Reply yes or no.');
           return;
         }
 
@@ -462,7 +469,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _isPaidEvent = true;
           _isPaidModeChosen = true;
           _step = _EventBuilderStep.fee;
-          _addAssistant('Got it. What is the entry fee amount? (e.g., 10.50)');
+          _addAssistant(
+              'Got it. What is the entry fee amount in LKR? (e.g., LKR 250)');
           return;
         }
 
@@ -470,7 +478,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _isPaidEvent = false;
           _isPaidModeChosen = true;
           _step = _EventBuilderStep.review;
-          _addAssistant('Free event selected. Review the event details below and save.');
+          _addAssistant(
+              'Free event selected. Review the event details below and save.');
           return;
         }
 
@@ -480,12 +489,14 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         final extractedFee = RegExp(r'\d+(\.\d+)?').firstMatch(input)?.group(0);
         final fee = double.tryParse(extractedFee ?? '');
         if (fee == null || fee <= 0) {
-          _addAssistant('Please provide a valid entry fee amount (e.g. 10.50).');
+          _addAssistant(
+              'Please provide a valid entry fee amount in LKR (e.g., LKR 250).');
           return;
         }
         _entryFee = fee;
         _step = _EventBuilderStep.review;
-        _addAssistant('Entry fee set. Review the event details below and save.');
+        _addAssistant(
+            'Entry fee set. Review the event details below and save.');
         break;
       case _EventBuilderStep.review:
         break;
@@ -665,7 +676,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       case _EventBuilderStep.isPaidMode:
         return 'Is this a paid event? Reply yes or no.';
       case _EventBuilderStep.fee:
-        return 'What is the entry fee amount?';
+        return 'What is the entry fee amount in LKR? (e.g., LKR 250)';
       case _EventBuilderStep.review:
         return 'Review the summary and save when ready.';
     }
@@ -953,7 +964,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
 
   Future<void> _openEditSummarySheet() async {
     final nameCtrl = TextEditingController(text: _name ?? '');
-    final durationCtrl = TextEditingController(text: (_durationHours ?? 2).toString());
+    final durationCtrl =
+        TextEditingController(text: (_durationHours ?? 2).toString());
     final locationCtrl = TextEditingController(text: _location ?? '');
     final attendeesCtrl =
         TextEditingController(text: (_attendees ?? '').toString());
@@ -968,6 +980,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     TimeOfDay tempTime = _time ?? const TimeOfDay(hour: 9, minute: 0);
     bool tempHasParticipantLimit = _hasParticipantLimit;
     bool tempIsQnaEnabled = _isQnaEnabled;
+    bool tempIsQrAttendanceEnabled = _isQrAttendanceEnabled;
     bool tempIsPaidEvent = _isPaidEvent;
 
     await showModalBottomSheet<void>(
@@ -1054,7 +1067,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     TextField(
                       controller: durationCtrl,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Duration (hours)'),
+                      decoration:
+                          const InputDecoration(labelText: 'Duration (hours)'),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -1093,6 +1107,15 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     const SizedBox(height: 10),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
+                      value: tempIsQrAttendanceEnabled,
+                      onChanged: (value) {
+                        setModalState(() => tempIsQrAttendanceEnabled = value);
+                      },
+                      title: const Text('Require QR check-in for attendance'),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
                       value: tempIsPaidEvent,
                       onChanged: (value) {
                         setModalState(() => tempIsPaidEvent = value);
@@ -1106,9 +1129,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     TextField(
                       controller: entryFeeCtrl,
                       enabled: tempIsPaidEvent,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration:
-                          const InputDecoration(labelText: 'Entry Fee amount'),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Entry Fee amount (LKR)',
+                        hintText: 'e.g., 250',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -1160,11 +1186,15 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: () {
+                          final duration =
+                              int.tryParse(durationCtrl.text.trim());
                           final attendees =
                               int.tryParse(attendeesCtrl.text.trim());
                           final requiresAttendees = tempHasParticipantLimit;
                           final fee = double.tryParse(entryFeeCtrl.text.trim());
                           if (nameCtrl.text.trim().isEmpty ||
+                              duration == null ||
+                              duration <= 0 ||
                               locationCtrl.text.trim().isEmpty ||
                               descriptionCtrl.text.trim().length < 10 ||
                               (requiresAttendees &&
@@ -1184,7 +1214,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                             _date = DateTime(
                                 tempDate.year, tempDate.month, tempDate.day);
                             _time = tempTime;
-                            _durationHours = int.tryParse(durationCtrl.text.trim()) ?? 2;
+                            _durationHours = duration;
                             _location = locationCtrl.text.trim();
                             _hasParticipantLimit = tempHasParticipantLimit;
                             _participantModeChosen = true;
@@ -1195,6 +1225,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                                 _normalizePosterUrl(posterCtrl.text.trim());
                             _isQnaEnabled = tempIsQnaEnabled;
                             _qnaModeChosen = true;
+                            _isQrAttendanceEnabled = tempIsQrAttendanceEnabled;
+                            _qrAttendanceModeChosen = true;
                             _isPaidEvent = tempIsPaidEvent;
                             _isPaidModeChosen = true;
                             _entryFee = tempIsPaidEvent ? fee : null;
@@ -1612,7 +1644,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           _SummaryLine(
               label: 'Time', value: _time == null ? '-' : _formatTime(_time!)),
           _SummaryLine(
-              label: 'Duration', value: _durationHours == null ? '-' : '${_durationHours} hours'),
+              label: 'Duration',
+              value: _durationHours == null ? '-' : '${_durationHours} hours'),
           _SummaryLine(label: 'Location', value: _location ?? '-'),
           _SummaryLine(
             label: 'Participant count',
@@ -1627,12 +1660,17 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           ),
           _SummaryLine(
             label: 'Paid Event',
-            value: _isPaidEvent ? 'Yes (\$$_entryFee)' : 'No (Free)',
+            value: _isPaidEvent
+                ? 'Yes (Rs. ${_entryFee?.toStringAsFixed(2) ?? '0.00'})'
+                : 'No (Free)',
           ),
           _SummaryLine(label: 'Description', value: _description ?? '-'),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('clubs').orderBy('name').snapshots(),
+            stream: FirebaseFirestore.instance
+                .collection('clubs')
+                .orderBy('name')
+                .snapshots(),
             builder: (context, snapshot) {
               final docs = snapshot.data?.docs ?? [];
               if (docs.isEmpty) return const SizedBox.shrink();
@@ -1644,8 +1682,10 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                   decoration: InputDecoration(
                     labelText: 'Club (Optional)',
                     labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16)),
                   ),
                   items: [
                     const DropdownMenuItem<String?>(
@@ -1674,7 +1714,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                       if (val == null) {
                         _clubName = null;
                       } else {
-                        final data = docs.firstWhere((d) => d.id == val).data() as Map<String, dynamic>;
+                        final data = docs.firstWhere((d) => d.id == val).data()
+                            as Map<String, dynamic>;
                         _clubName = data['name']?.toString();
                       }
                     });

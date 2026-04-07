@@ -169,11 +169,12 @@ class EventCard extends StatelessWidget {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1A8A5A).withValues(alpha: 0.12),
+                              color: const Color(0xFF1A8A5A)
+                                  .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              '\$${event.entryFee?.toStringAsFixed(2) ?? '0.00'}',
+                              'Rs. ${event.entryFee?.toStringAsFixed(2) ?? '0.00'}',
                               style: const TextStyle(
                                 color: Color(0xFF1A8A5A),
                                 fontSize: 11,

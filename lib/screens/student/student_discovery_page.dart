@@ -11,13 +11,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../models/event_model.dart';
+import '../../services/event_service.dart';
+import '../../services/paypal_checkout_service.dart';
 
 import '../../widgets/event_card.dart';
 import 'qr_generator_page.dart';
 import 'student_qna_screen.dart';
-
-import 'package:flutter_paypal/flutter_paypal.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 const Color _bgColor = Color(0xFFF6F1EB);
 const Color _cardColor = Color(0xFFFFFFFF);
@@ -56,6 +55,7 @@ class StudentDiscoveryPage extends StatefulWidget {
 
 class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
   final TextEditingController _searchController = TextEditingController();
+  final EventService _eventService = EventService();
   String _selectedCategory = 'All';
   Timer? _tomorrowRotationTimer;
   int _tomorrowEventsCount = 0;
@@ -438,95 +438,103 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
           if (user == null) return const SizedBox.shrink();
 
           return StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .snapshots(),
             builder: (context, userSnapshot) {
-              final userData = userSnapshot.data?.data() as Map<String, dynamic>?;
+              final userData =
+                  userSnapshot.data?.data() as Map<String, dynamic>?;
               final prefsRaw = userData?['preferredCategories'];
-              final preferredCategories = (prefsRaw is List) ? List<String>.from(prefsRaw) : <String>[];
+              final preferredCategories =
+                  (prefsRaw is List) ? List<String>.from(prefsRaw) : <String>[];
 
               final now = DateTime.now();
-          final liveEvents =
-              filteredEvents.where((event) => _isLive(event, now)).toList();
+              final liveEvents =
+                  filteredEvents.where((event) => _isLive(event, now)).toList();
 
-          final upcomingEvents = filteredEvents
-              .where((event) => _start(event).isAfter(now))
-              .toList()
-            ..sort((a, b) => _start(a).compareTo(_start(b)));
+              final upcomingEvents = filteredEvents
+                  .where((event) => _start(event).isAfter(now))
+                  .toList()
+                ..sort((a, b) => _start(a).compareTo(_start(b)));
 
-          final endedEvents = filteredEvents
-              .where((event) => _isEnded(event, now))
-              .toList()
-            ..sort((a, b) => _start(b).compareTo(_start(a)));
+              final endedEvents = filteredEvents
+                  .where((event) => _isEnded(event, now))
+                  .toList()
+                ..sort((a, b) => _start(b).compareTo(_start(a)));
 
-          final tomorrow = DateTime(now.year, now.month, now.day + 1);
-          final tomorrowEvents = upcomingEvents.where((event) {
-            final eventStart = _start(event);
-            return eventStart.year == tomorrow.year &&
-                eventStart.month == tomorrow.month &&
-                eventStart.day == tomorrow.day;
-          }).toList();
+              final tomorrow = DateTime(now.year, now.month, now.day + 1);
+              final tomorrowEvents = upcomingEvents.where((event) {
+                final eventStart = _start(event);
+                return eventStart.year == tomorrow.year &&
+                    eventStart.month == tomorrow.month &&
+                    eventStart.day == tomorrow.day;
+              }).toList();
 
-          _tomorrowEventsCount = tomorrowEvents.length;
-          if (_tomorrowSpotlightIndexNotifier.value >= _tomorrowEventsCount &&
-              _tomorrowEventsCount > 0) {
-            _tomorrowSpotlightIndexNotifier.value = 0;
-          }
+              _tomorrowEventsCount = tomorrowEvents.length;
+              if (_tomorrowSpotlightIndexNotifier.value >=
+                      _tomorrowEventsCount &&
+                  _tomorrowEventsCount > 0) {
+                _tomorrowSpotlightIndexNotifier.value = 0;
+              }
 
-          final featuredEvent = liveEvents.isNotEmpty ? liveEvents.first : null;
-          List<EventModel> personalizedEvents = upcomingEvents
-              .where(
-                (event) =>
-                    !tomorrowEvents.any((tEvent) => tEvent.id == event.id),
-              )
-              .toList();
-              
-          final isCategoryMode = _selectedCategory != 'All';
-
-          if (!isCategoryMode && preferredCategories.isNotEmpty) {
-            personalizedEvents = personalizedEvents
-                .where((e) => preferredCategories.contains(e.category))
-                .take(3)
-                .toList();
-          } else {
-            personalizedEvents = personalizedEvents.take(4).toList();
-          }
-              
-          final personalizedShownIds = personalizedEvents.map((e) => e.id).toSet();
-          final moreUpcomingEvents = upcomingEvents
-              .where((e) => !personalizedShownIds.contains(e.id))
-              .toList();
-              
-          final filteredCount = filteredEvents.length;
-
-          return ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              10,
-              16,
-              20 + MediaQuery.of(context).padding.bottom,
-            ),
-            children: [
-              _buildSearchBar(),
-              const SizedBox(height: 16),
-              _buildCategories(),
-              if (isCategoryMode) ...[
-                const SizedBox(height: 14),
-                _buildCategoryHero(
-                  category: _selectedCategory,
-                  eventCount: filteredCount,
-                ),
-              ],
-              const SizedBox(height: 26),
-              if (query.isNotEmpty) ...[
-                _sectionHeader('Search Results', 'FOUND EVENTS'),
-                const SizedBox(height: 14),
-                if (filteredEvents.isEmpty)
-                  _emptyState(
-                    'No events found matching "$query".',
-                    icon: Icons.search_off_rounded,
+              final featuredEvent =
+                  liveEvents.isNotEmpty ? liveEvents.first : null;
+              List<EventModel> personalizedEvents = upcomingEvents
+                  .where(
+                    (event) =>
+                        !tomorrowEvents.any((tEvent) => tEvent.id == event.id),
                   )
-                else
-                  ...filteredEvents.map(
+                  .toList();
+
+              final isCategoryMode = _selectedCategory != 'All';
+
+              if (!isCategoryMode && preferredCategories.isNotEmpty) {
+                personalizedEvents = personalizedEvents
+                    .where((e) => preferredCategories.contains(e.category))
+                    .take(3)
+                    .toList();
+              } else {
+                personalizedEvents = personalizedEvents.take(4).toList();
+              }
+
+              final personalizedShownIds =
+                  personalizedEvents.map((e) => e.id).toSet();
+              final moreUpcomingEvents = upcomingEvents
+                  .where((e) => !personalizedShownIds.contains(e.id))
+                  .toList();
+
+              final filteredCount = filteredEvents.length;
+
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  10,
+                  16,
+                  20 + MediaQuery.of(context).padding.bottom,
+                ),
+                children: [
+                  _buildSearchBar(),
+                  const SizedBox(height: 16),
+                  _buildCategories(),
+                  if (isCategoryMode) ...[
+                    const SizedBox(height: 14),
+                    _buildCategoryHero(
+                      category: _selectedCategory,
+                      eventCount: filteredCount,
+                    ),
+                  ],
+                  const SizedBox(height: 26),
+                  if (query.isNotEmpty) ...[
+                    _sectionHeader('Search Results', 'FOUND EVENTS'),
+                    const SizedBox(height: 14),
+                    if (filteredEvents.isEmpty)
+                      _emptyState(
+                        'No events found matching "$query".',
+                        icon: Icons.search_off_rounded,
+                      )
+                    else
+                      ...filteredEvents.map(
                         (event) => Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: EventCard(
@@ -536,180 +544,188 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
                             onTap: () {
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) => EventDetailsPage(event: event),
+                                  builder: (_) =>
+                                      EventDetailsPage(event: event),
                                 ),
                               );
                             },
                           ),
                         ),
                       ),
-              ] else ...[
-              _sectionHeader('Happening Now', 'CURATION'),
-              const SizedBox(height: 14),
-              if (featuredEvent != null)
-                _FeaturedEventCard(
-                  event: featuredEvent,
-                  isLive: liveEvents.contains(featuredEvent),
-                  categoryColor: _categoryColor(featuredEvent.category),
-                  dateText: _dateText(_start(featuredEvent)),
-                  timeText: _timeText(featuredEvent),
-                )
-              else
-                _emptyState(
-                  isCategoryMode
-                      ? 'No live ${_selectedCategory.toLowerCase()} events right now.'
-                      : 'Nothing live right now. Stay tuned.',
-                  icon: Icons.videocam_off_rounded,
-                ),
-              if (tomorrowEvents.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                ValueListenableBuilder<int>(
-                  valueListenable: _tomorrowSpotlightIndexNotifier,
-                  builder: (context, spotlightIndex, _) {
-                    final safeIndex = spotlightIndex % tomorrowEvents.length;
-                    final spotlightEvent = tomorrowEvents[safeIndex];
-                    return AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 450),
-                      switchInCurve: Curves.easeOut,
-                      switchOutCurve: Curves.easeIn,
-                      transitionBuilder: (child, animation) {
-                        final fade = CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeInOut,
-                        );
-                        return FadeTransition(opacity: fade, child: child);
-                      },
-                      child: _SpotlightCard(
-                        key: ValueKey('tomorrow-${spotlightEvent.id}'),
-                        event: spotlightEvent,
-                        dateText: _spotlightDateLabel(spotlightEvent, now),
-                        timeText: _timeTextCompact(spotlightEvent),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  EventDetailsPage(event: spotlightEvent),
+                  ] else ...[
+                    _sectionHeader('Happening Now', 'CURATION'),
+                    const SizedBox(height: 14),
+                    if (featuredEvent != null)
+                      _FeaturedEventCard(
+                        event: featuredEvent,
+                        isLive: liveEvents.contains(featuredEvent),
+                        categoryColor: _categoryColor(featuredEvent.category),
+                        dateText: _dateText(_start(featuredEvent)),
+                        timeText: _timeText(featuredEvent),
+                      )
+                    else
+                      _emptyState(
+                        isCategoryMode
+                            ? 'No live ${_selectedCategory.toLowerCase()} events right now.'
+                            : 'Nothing live right now. Stay tuned.',
+                        icon: Icons.videocam_off_rounded,
+                      ),
+                    if (tomorrowEvents.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      ValueListenableBuilder<int>(
+                        valueListenable: _tomorrowSpotlightIndexNotifier,
+                        builder: (context, spotlightIndex, _) {
+                          final safeIndex =
+                              spotlightIndex % tomorrowEvents.length;
+                          final spotlightEvent = tomorrowEvents[safeIndex];
+                          return AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 450),
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeIn,
+                            transitionBuilder: (child, animation) {
+                              final fade = CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeInOut,
+                              );
+                              return FadeTransition(
+                                  opacity: fade, child: child);
+                            },
+                            child: _SpotlightCard(
+                              key: ValueKey('tomorrow-${spotlightEvent.id}'),
+                              event: spotlightEvent,
+                              dateText:
+                                  _spotlightDateLabel(spotlightEvent, now),
+                              timeText: _timeTextCompact(spotlightEvent),
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        EventDetailsPage(event: spotlightEvent),
+                                  ),
+                                );
+                              },
                             ),
                           );
                         },
                       ),
-                    );
-                  },
-                ),
-              ],
-              const SizedBox(height: 10),
-              _HostEventCard(
-                onTap: () {
-                  final openOrganize = widget.onOpenOrganize;
-                  if (openOrganize != null) {
-                    openOrganize();
-                    return;
-                  }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Event creation coming soon')),
-                  );
-                },
-              ),
-              const SizedBox(height: 28),
-              _sectionHeader(
-                isCategoryMode
-                    ? 'Upcoming in ${_selectedCategory}s'
-                    : 'Upcoming for You',
-                isCategoryMode ? 'FILTERED' : 'PERSONALIZED',
-              ),
-              const SizedBox(height: 14),
-              if (personalizedEvents.isEmpty)
-                _emptyState(
-                  isCategoryMode
-                      ? 'No upcoming ${_selectedCategory.toLowerCase()} events found. Try All or another category.'
-                      : 'No upcoming events found. Try another category or search.',
-                  icon: Icons.event_busy_rounded,
-                )
-              else ...[
-                ...personalizedEvents.map(
-                      (event) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: EventCard(
-                          event: event,
-                          scheduleText: _upcomingScheduleText(event, now),
-                          categoryColor: _upcomingBadgeColor(event.category),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => EventDetailsPage(event: event),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-              ],
-              
-              if (moreUpcomingEvents.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _dottedDivider(),
-                const SizedBox(height: 24),
-                _sectionHeader(
-                  isCategoryMode ? 'More ${_selectedCategory}s' : 'All Upcoming Events', 
-                  'DISCOVER MORE'
-                ),
-                const SizedBox(height: 14),
-                ...moreUpcomingEvents.map(
-                      (event) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: EventCard(
-                          event: event,
-                          scheduleText: _upcomingScheduleText(event, now),
-                          categoryColor: _upcomingBadgeColor(event.category),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => EventDetailsPage(event: event),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-              ],
-              const SizedBox(height: 10),
-              _dottedDivider(),
-              const SizedBox(height: 24),
-              _sectionHeader('Ended Events', 'PAST'),
-              const SizedBox(height: 14),
-              if (endedEvents.isEmpty)
-                _emptyState(
-                  isCategoryMode
-                      ? 'No ended ${_selectedCategory.toLowerCase()} events.'
-                      : 'No ended events.',
-                  icon: Icons.history_rounded,
-                )
-              else
-                for (final event in endedEvents.take(5))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: EventCard(
-                      event: event,
-                      scheduleText: _upcomingScheduleText(event, now),
-                      categoryColor: const Color(0xFF8A98A9),
+                    ],
+                    const SizedBox(height: 10),
+                    _HostEventCard(
                       onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => EventDetailsPage(event: event),
-                          ),
+                        final openOrganize = widget.onOpenOrganize;
+                        if (openOrganize != null) {
+                          openOrganize();
+                          return;
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Event creation coming soon')),
                         );
                       },
                     ),
-                  ),
-              ],
-            ],
+                    const SizedBox(height: 28),
+                    _sectionHeader(
+                      isCategoryMode
+                          ? 'Upcoming in ${_selectedCategory}s'
+                          : 'Upcoming for You',
+                      isCategoryMode ? 'FILTERED' : 'PERSONALIZED',
+                    ),
+                    const SizedBox(height: 14),
+                    if (personalizedEvents.isEmpty)
+                      _emptyState(
+                        isCategoryMode
+                            ? 'No upcoming ${_selectedCategory.toLowerCase()} events found. Try All or another category.'
+                            : 'No upcoming events found. Try another category or search.',
+                        icon: Icons.event_busy_rounded,
+                      )
+                    else ...[
+                      ...personalizedEvents.map(
+                        (event) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: EventCard(
+                            event: event,
+                            scheduleText: _upcomingScheduleText(event, now),
+                            categoryColor: _upcomingBadgeColor(event.category),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      EventDetailsPage(event: event),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (moreUpcomingEvents.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _dottedDivider(),
+                      const SizedBox(height: 24),
+                      _sectionHeader(
+                          isCategoryMode
+                              ? 'More ${_selectedCategory}s'
+                              : 'All Upcoming Events',
+                          'DISCOVER MORE'),
+                      const SizedBox(height: 14),
+                      ...moreUpcomingEvents.map(
+                        (event) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: EventCard(
+                            event: event,
+                            scheduleText: _upcomingScheduleText(event, now),
+                            categoryColor: _upcomingBadgeColor(event.category),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      EventDetailsPage(event: event),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    _dottedDivider(),
+                    const SizedBox(height: 24),
+                    _sectionHeader('Ended Events', 'PAST'),
+                    const SizedBox(height: 14),
+                    if (endedEvents.isEmpty)
+                      _emptyState(
+                        isCategoryMode
+                            ? 'No ended ${_selectedCategory.toLowerCase()} events.'
+                            : 'No ended events.',
+                        icon: Icons.history_rounded,
+                      )
+                    else
+                      for (final event in endedEvents.take(5))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: EventCard(
+                            event: event,
+                            scheduleText: _upcomingScheduleText(event, now),
+                            categoryColor: const Color(0xFF8A98A9),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      EventDetailsPage(event: event),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                  ],
+                ],
+              );
+            },
           );
         },
-      );
-      },
-    ),
-  );
-}
+      ),
+    );
+  }
 
   Widget _buildSearchBar() {
     return Container(
@@ -1356,8 +1372,6 @@ class _DashedRoundedRectPainter extends CustomPainter {
   }
 }
 
-
-
 class EventDetailsPage extends StatefulWidget {
   final EventModel event;
 
@@ -1369,7 +1383,9 @@ class EventDetailsPage extends StatefulWidget {
 
 class EventDetailsPageState extends State<EventDetailsPage> {
   final TextEditingController _feedbackController = TextEditingController();
+  final EventService _eventService = EventService();
   bool _sendingFeedback = false;
+  static const double _lkrPerUsd = 320.0;
 
   EventModel get event => widget.event;
 
@@ -1439,11 +1455,14 @@ class EventDetailsPageState extends State<EventDetailsPage> {
     if (uid == null) return;
     final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
     try {
-      await ref.update({'scheduledByIds': FieldValue.arrayUnion([uid])});
+      await ref.update({
+        'scheduledByIds': FieldValue.arrayUnion([uid])
+      });
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('Added to your schedule.')));
+          ..showSnackBar(
+              const SnackBar(content: Text('Added to your schedule.')));
       }
     } catch (e) {
       if (mounted) {
@@ -1459,11 +1478,14 @@ class EventDetailsPageState extends State<EventDetailsPage> {
     if (uid == null) return;
     final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
     try {
-      await ref.update({'scheduledByIds': FieldValue.arrayRemove([uid])});
+      await ref.update({
+        'scheduledByIds': FieldValue.arrayRemove([uid])
+      });
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('Removed from your schedule.')));
+          ..showSnackBar(
+              const SnackBar(content: Text('Removed from your schedule.')));
       }
     } catch (e) {
       if (mounted) {
@@ -1480,67 +1502,86 @@ class EventDetailsPageState extends State<EventDetailsPage> {
     if (uid == null) return;
 
     if (event.isPaidEvent && (event.entryFee ?? 0) > 0) {
-      final amountStr = event.entryFee!.toStringAsFixed(2);
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (BuildContext context) => UsePaypal(
-            sandboxMode: true,
-            clientId: dotenv.env['PAYPAL_CLIENT_ID'] ?? "",
-            secretKey: dotenv.env['PAYPAL_SECRET'] ?? "",
-            returnURL: "https://samplesite.com/return",
-            cancelURL: "https://samplesite.com/cancel",
-            transactions: [
-              {
-                "amount": {
-                  "total": amountStr,
-                  "currency": "USD",
-                  "details": {
-                    "subtotal": amountStr,
-                    "shipping": '0',
-                    "shipping_discount": 0
-                  }
-                },
-                "description": "Payment for ${event.name}",
-                "item_list": {
-                  "items": [
-                    {
-                      "name": event.name,
-                      "quantity": 1,
-                      "price": amountStr,
-                      "currency": "USD"
-                    }
-                  ]
+      final lkrAmount = event.entryFee!;
+      final lkrAmountStr = lkrAmount.toStringAsFixed(2);
+      final usdAmount = (lkrAmount / _lkrPerUsd).clamp(0.01, 9999999.0);
+      final usdAmountStr = usdAmount.toStringAsFixed(2);
+      final paymentParams = await PayPalCheckoutService.showCheckout(
+        context: context,
+        transactions: [
+          {
+            'amount': {
+              'total': usdAmountStr,
+              'currency': 'USD',
+              'details': {
+                'subtotal': usdAmountStr,
+                'shipping': '0',
+                'shipping_discount': 0,
+              },
+            },
+            'description':
+                'Payment for ${event.name} (LKR $lkrAmountStr ~ USD $usdAmountStr)',
+            'item_list': {
+              'items': [
+                {
+                  'name': event.name,
+                  'quantity': 1,
+                  'price': usdAmountStr,
+                  'currency': 'USD',
                 }
-              }
-            ],
-            note: "Payment for event registration.",
-            onSuccess: (Map params) async {
-              _processRegistration(uid);
+              ],
             },
-            onError: (error) {
-              print("PayPal Error: $error");
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Error')),
-                );
-              }
-            },
-            onCancel: (params) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment Cancelled')),
-                );
-              }
-            },
+          }
+        ],
+        note:
+            'Payment for event registration. Charged in USD equivalent for PayPal compatibility.',
+      );
+
+      debugPrint(
+          'PayPal checkout result for event ${event.id}: $paymentParams');
+      if (!mounted) return;
+      if (paymentParams == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Payment was not completed. In sandbox, use a PayPal buyer account instead of direct card checkout.',
+            ),
           ),
+        );
+        return;
+      }
+
+      if (!_isPaypalPaymentConfirmed(paymentParams)) {
+        final status = _extractPaymentStatus(paymentParams);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              status == null
+                  ? 'Payment could not be verified. Please retry the payment.'
+                  : 'Payment not completed (status: $status).',
+            ),
+          ),
+        );
+        return;
+      }
+
+      await _completeRegistration(
+        uid,
+        paymentDetails: _buildPaymentDetails(
+          paymentParams,
+          lkrAmountStr: lkrAmountStr,
+          usdAmountStr: usdAmountStr,
         ),
       );
+
+      return;
     } else {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFFF9F6F0),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text(
             'Confirm Registration',
             style: TextStyle(
@@ -1563,64 +1604,148 @@ class EventDetailsPageState extends State<EventDetailsPage> {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text(
                 'Cancel',
-                style: TextStyle(color: Color(0xFFAC5D20), fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: Color(0xFFAC5D20), fontWeight: FontWeight.bold),
               ),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFAC5D20),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text('Confirm',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
       );
 
       if (confirm != true) return;
-      _processRegistration(uid);
+      await _completeRegistration(uid);
     }
   }
 
-  Future<void> _processRegistration(String uid) async {
-    final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
+  Map<String, dynamic> _buildPaymentDetails(
+    Map<String, dynamic> paymentParams, {
+    required String lkrAmountStr,
+    required String usdAmountStr,
+  }) {
+    final transactionId = paymentParams['paymentId']?.toString().trim() ??
+        paymentParams['token']?.toString().trim() ??
+        paymentParams['PayerID']?.toString().trim() ??
+        paymentParams['orderID']?.toString().trim() ??
+        paymentParams['transactionId']?.toString().trim();
+
+    return {
+      'paymentProvider': 'paypal',
+      'paymentStatus': 'paid',
+      'amount': double.tryParse(lkrAmountStr) ?? event.entryFee,
+      'currency': 'LKR',
+      'providerAmount': double.tryParse(usdAmountStr),
+      'providerCurrency': 'USD',
+      'transactionId': transactionId,
+    };
+  }
+
+  bool _isPaypalPaymentConfirmed(Map<String, dynamic> paymentParams) {
+    final status = _extractPaymentStatus(paymentParams);
+    const successStatuses = {
+      'approved',
+      'completed',
+      'success',
+      'succeeded',
+      'paid',
+    };
+
+    if (status != null && successStatuses.contains(status)) {
+      return true;
+    }
+
+    final transactionId = _extractTransactionId(paymentParams);
+    return transactionId != null && transactionId.isNotEmpty;
+  }
+
+  String? _extractPaymentStatus(Map<String, dynamic> paymentParams) {
+    final candidates = [
+      paymentParams['status'],
+      paymentParams['state'],
+      paymentParams['paymentStatus'],
+      paymentParams['result'],
+      paymentParams['ack'],
+    ];
+
+    for (final raw in candidates) {
+      final value = raw?.toString().trim().toLowerCase();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  String? _extractTransactionId(Map<String, dynamic> paymentParams) {
+    final candidates = [
+      paymentParams['paymentId'],
+      paymentParams['token'],
+      paymentParams['PayerID'],
+      paymentParams['orderID'],
+      paymentParams['transactionId'],
+      paymentParams['id'],
+    ];
+
+    for (final raw in candidates) {
+      final value = raw?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  Future<void> _completeRegistration(
+    String uid, {
+    Map<String, dynamic>? paymentDetails,
+  }) async {
     try {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('Registering...')));
 
-      await FirebaseFirestore.instance.runTransaction((tx) async {
-        final doc = await tx.get(ref);
-        if (!doc.exists) return;
-        final data = doc.data()!;
-        final joinedIds = List<String>.from(data['joinedParticipantIds'] ?? []);
-        final scheduledIds = List<String>.from(data['scheduledByIds'] ?? []);
-        var count = data['joinedParticipantCount'] as int? ?? joinedIds.length;
-
-        if (!joinedIds.contains(uid)) {
-          joinedIds.add(uid);
-          count++;
-        }
-        // Also auto-add to personal schedule
-        if (!scheduledIds.contains(uid)) {
-          scheduledIds.add(uid);
-        }
-
-        tx.update(ref, {
-          'joinedParticipantIds': joinedIds,
-          'joinedParticipantCount': count,
-          'scheduledByIds': scheduledIds,
-        });
-      });
+      await _eventService.joinEvent(
+        eventId: event.id!,
+        userId: uid,
+        paymentDetails: paymentDetails,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('Registered! Event added to your schedule.')));
+          ..showSnackBar(const SnackBar(
+              content: Text('Registered! Event added to your schedule.')));
+
+        if (event.isPaidEvent || event.isQrAttendanceEnabled) {
+          final currentUser = FirebaseAuth.instance.currentUser;
+          final sName = currentUser?.displayName ?? 'Student';
+          QRGeneratorDialog.show(
+            context,
+            uid: uid,
+            studentName: sName,
+            studentId: uid.length > 8 ? uid.substring(0, 8) : uid,
+            event: event,
+          );
+        }
       }
     } catch (e) {
+      debugPrint('Registration failed for event ${event.id}: $e');
       if (mounted) {
+        if (e is FirebaseException && e.code == 'permission-denied') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Registration write blocked by Firestore rules. Allow authenticated users to update events and write events/{eventId}/registrations/{uid}.',
+              ),
+            ),
+          );
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed: $e')),
         );
@@ -1697,13 +1822,13 @@ class EventDetailsPageState extends State<EventDetailsPage> {
     final venue = event.location.trim().isEmpty ? 'TBA' : event.location;
     final isAllocatedEvent =
         event.hasParticipantLimit && (event.attendeeCount ?? 0) > 0;
-    
+
     final now = DateTime.now();
     final start = _start(event);
     final end = start.add(Duration(hours: event.durationHours));
     final isLive = now.isAfter(start) && now.isBefore(end);
     final isEnded = now.isAfter(end);
-    
+
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
@@ -1901,19 +2026,24 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                               value: '${event.durationHours} hours'),
                           const SizedBox(height: 10),
                           _DetailItem(label: 'Venue', value: venue),
-                          if (event.clubName != null && event.clubName!.isNotEmpty) ...[
+                          if (event.clubName != null &&
+                              event.clubName!.isNotEmpty) ...[
                             const SizedBox(height: 10),
                             _DetailItem(label: 'Club', value: event.clubName!),
                           ],
-                          if (event.hasParticipantLimit && event.attendeeCount != null) ...[
+                          if (event.hasParticipantLimit &&
+                              event.attendeeCount != null) ...[
                             const SizedBox(height: 10),
-                            _DetailItem(label: 'Joined', value: '${event.joinedParticipantCount} / ${event.attendeeCount}'),
+                            _DetailItem(
+                                label: 'Joined',
+                                value:
+                                    '${event.joinedParticipantCount} / ${event.attendeeCount}'),
                           ],
                           const SizedBox(height: 10),
                           _DetailItem(
                             label: 'Entry',
                             value: event.isPaidEvent
-                                ? '\$${event.entryFee?.toStringAsFixed(2) ?? '0.00'} (PayPal)'
+                                ? 'Rs. ${event.entryFee?.toStringAsFixed(2) ?? '0.00'} (PayPal)'
                                 : 'Free',
                           ),
                           const SizedBox(height: 12),
@@ -1974,7 +2104,8 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.event_busy_rounded, size: 18, color: Color(0xFF7B6E63)),
+                      Icon(Icons.event_busy_rounded,
+                          size: 18, color: Color(0xFF7B6E63)),
                       SizedBox(width: 8),
                       Text(
                         'This event has ended',
@@ -2133,9 +2264,8 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                         final likeCount = likedBy.length;
                         final hasLiked = likedBy.contains(currentUid);
                         final ts = data['timestamp'] as Timestamp?;
-                        final timeAgo = ts != null
-                            ? _timeAgoText(ts.toDate())
-                            : 'Just now';
+                        final timeAgo =
+                            ts != null ? _timeAgoText(ts.toDate()) : 'Just now';
 
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -2145,12 +2275,11 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                  color: const Color(0xFFE8D5C4)),
+                              border:
+                                  Border.all(color: const Color(0xFFE8D5C4)),
                             ),
                             child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
@@ -2158,15 +2287,14 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                       width: 32,
                                       height: 32,
                                       decoration: BoxDecoration(
-                                        color: _primaryAccent
-                                            .withValues(alpha: 0.15),
+                                        color: _primaryAccent.withValues(
+                                            alpha: 0.15),
                                         shape: BoxShape.circle,
                                       ),
                                       child: Center(
                                         child: Text(
                                           senderName.isNotEmpty
-                                              ? senderName[0]
-                                                  .toUpperCase()
+                                              ? senderName[0].toUpperCase()
                                               : '?',
                                           style: const TextStyle(
                                             color: _primaryAccent,
@@ -2215,38 +2343,31 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                 Row(
                                   children: [
                                     InkWell(
-                                      borderRadius:
-                                          BorderRadius.circular(20),
+                                      borderRadius: BorderRadius.circular(20),
                                       onTap: () => _toggleLike(
                                           doc.id, hasLiked, currentUid),
                                       child: Container(
-                                        padding:
-                                            const EdgeInsets.symmetric(
-                                                horizontal: 10,
-                                                vertical: 5),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
                                         decoration: BoxDecoration(
                                           color: hasLiked
-                                              ? _primaryAccent
-                                                  .withValues(
-                                                      alpha: 0.12)
+                                              ? _primaryAccent.withValues(
+                                                  alpha: 0.12)
                                               : const Color(0xFFF6F1EB),
                                           borderRadius:
                                               BorderRadius.circular(20),
                                         ),
                                         child: Row(
-                                          mainAxisSize:
-                                              MainAxisSize.min,
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
                                               hasLiked
                                                   ? Icons.thumb_up_alt
-                                                  : Icons
-                                                      .thumb_up_alt_outlined,
+                                                  : Icons.thumb_up_alt_outlined,
                                               size: 16,
                                               color: hasLiked
                                                   ? _primaryAccent
-                                                  : const Color(
-                                                      0xFF7B6E63),
+                                                  : const Color(0xFF7B6E63),
                                             ),
                                             if (likeCount > 0) ...[
                                               const SizedBox(width: 5),
@@ -2254,12 +2375,10 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                                 '$likeCount',
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  fontWeight:
-                                                      FontWeight.w700,
+                                                  fontWeight: FontWeight.w700,
                                                   color: hasLiked
                                                       ? _primaryAccent
-                                                      : const Color(
-                                                          0xFF7B6E63),
+                                                      : const Color(0xFF7B6E63),
                                                 ),
                                               ),
                                             ],
@@ -2290,7 +2409,8 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF0D1B2E).withValues(alpha: 0.35),
+                          color:
+                              const Color(0xFF0D1B2E).withValues(alpha: 0.35),
                           blurRadius: 14,
                           offset: const Offset(0, 5),
                         ),
@@ -2304,7 +2424,8 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => StudentQnaScreen(event: event),
+                              builder: (context) =>
+                                  StudentQnaScreen(event: event),
                             ),
                           );
                         },
@@ -2361,10 +2482,10 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                     final data = snap.data?.data() as Map<String, dynamic>?;
                     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-                    final scheduledIds = List<String>.from(
-                        data?['scheduledByIds'] ?? []);
-                    final joinedIds = List<String>.from(
-                        data?['joinedParticipantIds'] ?? []);
+                    final scheduledIds =
+                        List<String>.from(data?['scheduledByIds'] ?? []);
+                    final joinedIds =
+                        List<String>.from(data?['joinedParticipantIds'] ?? []);
 
                     final isScheduled = scheduledIds.contains(uid);
                     final isRegistered = joinedIds.contains(uid);
@@ -2380,7 +2501,8 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFE8F5EF),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFB2DFCA)),
+                              border:
+                                  Border.all(color: const Color(0xFFB2DFCA)),
                             ),
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -2399,29 +2521,39 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                               ],
                             ),
                           ),
-                          if (event.isQrAttendanceEnabled) ...[
+                          if (event.isQrAttendanceEnabled ||
+                              event.isPaidEvent) ...[
                             const SizedBox(height: 12),
                             FilledButton.icon(
                               onPressed: () {
-                                final currentUser = FirebaseAuth.instance.currentUser;
-                                final sName = currentUser?.displayName ?? 'Student';
+                                final currentUser =
+                                    FirebaseAuth.instance.currentUser;
+                                final sName =
+                                    currentUser?.displayName ?? 'Student';
 
                                 QRGeneratorDialog.show(
                                   context,
                                   uid: uid,
                                   studentName: sName,
-                                  studentId: uid.length > 8 ? uid.substring(0, 8) : uid,
+                                  studentId: uid.length > 8
+                                      ? uid.substring(0, 8)
+                                      : uid,
                                   event: event,
                                 );
                               },
-                              icon: const Icon(Icons.qr_code_2_rounded, size: 20),
-                              label: const Text(
-                                'View QR Ticket',
-                                style: TextStyle(fontWeight: FontWeight.w700),
+                              icon:
+                                  const Icon(Icons.qr_code_2_rounded, size: 20),
+                              label: Text(
+                                event.isPaidEvent
+                                    ? 'View Ticket'
+                                    : 'View QR Ticket',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
                               ),
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFFCB6D22),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
@@ -2443,12 +2575,15 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                               height: 46,
                               child: OutlinedButton.icon(
                                 onPressed: _removeFromSchedule,
-                                icon: const Icon(Icons.bookmark_remove_rounded, size: 18),
+                                icon: const Icon(Icons.bookmark_remove_rounded,
+                                    size: 18),
                                 label: const Text('Remove from Schedule',
-                                    style: TextStyle(fontWeight: FontWeight.w700)),
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w700)),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: const Color(0xFFCB6D22),
-                                  side: const BorderSide(color: Color(0xFFD9BFA5)),
+                                  side: const BorderSide(
+                                      color: Color(0xFFD9BFA5)),
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14)),
                                 ),
@@ -2462,14 +2597,20 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                     height: 46,
                                     child: OutlinedButton.icon(
                                       onPressed: _removeFromSchedule,
-                                      icon: const Icon(Icons.bookmark_remove_rounded, size: 16),
+                                      icon: const Icon(
+                                          Icons.bookmark_remove_rounded,
+                                          size: 16),
                                       label: const Text('Remove',
-                                          style: TextStyle(fontWeight: FontWeight.w700)),
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.w700)),
                                       style: OutlinedButton.styleFrom(
-                                        foregroundColor: const Color(0xFFCB6D22),
-                                        side: const BorderSide(color: Color(0xFFD9BFA5)),
+                                        foregroundColor:
+                                            const Color(0xFFCB6D22),
+                                        side: const BorderSide(
+                                            color: Color(0xFFD9BFA5)),
                                         shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(14)),
+                                            borderRadius:
+                                                BorderRadius.circular(14)),
                                       ),
                                     ),
                                   ),
@@ -2484,13 +2625,15 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                         backgroundColor: _primaryAccent,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(14)),
+                                            borderRadius:
+                                                BorderRadius.circular(14)),
                                       ),
                                       child: Text(
                                           event.isPaidEvent
-                                              ? 'Pay \$${event.entryFee?.toStringAsFixed(2)}'
+                                              ? 'Pay Rs. ${event.entryFee?.toStringAsFixed(2)}'
                                               : 'Register Event',
-                                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w700)),
                                     ),
                                   ),
                                 ),
@@ -2507,7 +2650,8 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                         height: 46,
                         child: FilledButton.icon(
                           onPressed: _addToSchedule,
-                          icon: const Icon(Icons.bookmark_add_rounded, size: 18),
+                          icon:
+                              const Icon(Icons.bookmark_add_rounded, size: 18),
                           label: const Text('Add to Schedule',
                               style: TextStyle(fontWeight: FontWeight.w700)),
                           style: FilledButton.styleFrom(
@@ -2528,12 +2672,15 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                             height: 46,
                             child: OutlinedButton.icon(
                               onPressed: _addToSchedule,
-                              icon: const Icon(Icons.bookmark_add_rounded, size: 16),
+                              icon: const Icon(Icons.bookmark_add_rounded,
+                                  size: 16),
                               label: const Text('Add to Schedule',
-                                  style: TextStyle(fontWeight: FontWeight.w700)),
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w700)),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: _primaryAccent,
-                                side: const BorderSide(color: Color(0xFFD9BFA5)),
+                                side:
+                                    const BorderSide(color: Color(0xFFD9BFA5)),
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14)),
                               ),
@@ -2554,9 +2701,10 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                               ),
                               child: Text(
                                   event.isPaidEvent
-                                      ? 'Pay \$${event.entryFee?.toStringAsFixed(2)}'
+                                      ? 'Pay Rs. ${event.entryFee?.toStringAsFixed(2)}'
                                       : 'Register Event',
-                                  style: const TextStyle(fontWeight: FontWeight.w700)),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
                             ),
                           ),
                         ),
