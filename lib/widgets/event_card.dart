@@ -154,6 +154,34 @@ class EventCard extends StatelessWidget {
                             ),
                           ),
                         ],
+                        if (event.isPaidEvent) ...[
+                          const Text(
+                            '•',
+                            style: TextStyle(
+                              color: Color(0xFFB79D87),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A8A5A).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '\$${event.entryFee?.toStringAsFixed(2) ?? '0.00'}',
+                              style: const TextStyle(
+                                color: Color(0xFF1A8A5A),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],

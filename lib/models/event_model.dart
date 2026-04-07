@@ -52,6 +52,8 @@ class EventModel {
   final int durationHours;
   final String? clubId;
   final String? clubName;
+  final bool isPaidEvent;
+  final double? entryFee;
 
   EventModel({
     this.id,
@@ -78,6 +80,8 @@ class EventModel {
     this.durationHours = 2,
     this.clubId,
     this.clubName,
+    this.isPaidEvent = false,
+    this.entryFee,
   });
 
   factory EventModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -147,6 +151,8 @@ class EventModel {
       durationHours: map['durationHours'] as int? ?? 2,
       clubId: map['clubId'] as String?,
       clubName: map['clubName'] as String?,
+      isPaidEvent: map['isPaidEvent'] as bool? ?? false,
+      entryFee: (map['entryFee'] as num?)?.toDouble(),
     );
   }
 
@@ -178,6 +184,8 @@ class EventModel {
       'durationHours': durationHours,
       'clubId': clubId,
       'clubName': clubName,
+      'isPaidEvent': isPaidEvent,
+      'entryFee': entryFee,
     };
   }
 }

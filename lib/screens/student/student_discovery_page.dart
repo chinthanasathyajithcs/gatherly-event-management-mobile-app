@@ -16,6 +16,9 @@ import '../../widgets/event_card.dart';
 import 'qr_generator_page.dart';
 import 'student_qna_screen.dart';
 
+import 'package:flutter_paypal/flutter_paypal.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 const Color _bgColor = Color(0xFFF6F1EB);
 const Color _cardColor = Color(0xFFFFFFFF);
 const Color _textDark = Color(0xFF1B1C20);
@@ -1476,50 +1479,111 @@ class EventDetailsPageState extends State<EventDetailsPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFF9F6F0),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Confirm Registration',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF4A3A2C),
-            fontSize: 22,
-            letterSpacing: -0.5,
+    if (event.isPaidEvent && (event.entryFee ?? 0) > 0) {
+      final amountStr = event.entryFee!.toStringAsFixed(2);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (BuildContext context) => UsePaypal(
+            sandboxMode: true,
+            clientId: dotenv.env['PAYPAL_CLIENT_ID'] ?? "",
+            secretKey: dotenv.env['PAYPAL_SECRET'] ?? "",
+            returnURL: "https://samplesite.com/return",
+            cancelURL: "https://samplesite.com/cancel",
+            transactions: [
+              {
+                "amount": {
+                  "total": amountStr,
+                  "currency": "USD",
+                  "details": {
+                    "subtotal": amountStr,
+                    "shipping": '0',
+                    "shipping_discount": 0
+                  }
+                },
+                "description": "Payment for ${event.name}",
+                "item_list": {
+                  "items": [
+                    {
+                      "name": event.name,
+                      "quantity": 1,
+                      "price": amountStr,
+                      "currency": "USD"
+                    }
+                  ]
+                }
+              }
+            ],
+            note: "Payment for event registration.",
+            onSuccess: (Map params) async {
+              _processRegistration(uid);
+            },
+            onError: (error) {
+              print("PayPal Error: $error");
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Payment Error')),
+                );
+              }
+            },
+            onCancel: (params) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Payment Cancelled')),
+                );
+              }
+            },
           ),
         ),
-        content: const Text(
-          'Are you sure you want to register for this event?',
-          style: TextStyle(
-            color: Color(0xFF7A6B5D),
-            fontSize: 15,
-            height: 1.4,
+      );
+    } else {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFFF9F6F0),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Confirm Registration',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF4A3A2C),
+              fontSize: 22,
+              letterSpacing: -0.5,
+            ),
           ),
+          content: const Text(
+            'Are you sure you want to register for this event?',
+            style: TextStyle(
+              color: Color(0xFF7A6B5D),
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFFAC5D20), fontWeight: FontWeight.bold),
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFAC5D20),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Color(0xFFAC5D20), fontWeight: FontWeight.bold),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFAC5D20),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+      );
 
-    if (confirm != true) return;
+      if (confirm != true) return;
+      _processRegistration(uid);
+    }
+  }
 
+  Future<void> _processRegistration(String uid) async {
     final ref = FirebaseFirestore.instance.collection('events').doc(event.id);
     try {
       ScaffoldMessenger.of(context)
@@ -1845,6 +1909,13 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                             const SizedBox(height: 10),
                             _DetailItem(label: 'Joined', value: '${event.joinedParticipantCount} / ${event.attendeeCount}'),
                           ],
+                          const SizedBox(height: 10),
+                          _DetailItem(
+                            label: 'Entry',
+                            value: event.isPaidEvent
+                                ? '\$${event.entryFee?.toStringAsFixed(2) ?? '0.00'} (PayPal)'
+                                : 'Free',
+                          ),
                           const SizedBox(height: 12),
                           const Text(
                             'Category',
@@ -2415,8 +2486,11 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                         shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(14)),
                                       ),
-                                      child: const Text('Register Event',
-                                          style: TextStyle(fontWeight: FontWeight.w700)),
+                                      child: Text(
+                                          event.isPaidEvent
+                                              ? 'Pay \$${event.entryFee?.toStringAsFixed(2)}'
+                                              : 'Register Event',
+                                          style: const TextStyle(fontWeight: FontWeight.w700)),
                                     ),
                                   ),
                                 ),
@@ -2478,8 +2552,11 @@ class EventDetailsPageState extends State<EventDetailsPage> {
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14)),
                               ),
-                              child: const Text('Register Event',
-                                  style: TextStyle(fontWeight: FontWeight.w700)),
+                              child: Text(
+                                  event.isPaidEvent
+                                      ? 'Pay \$${event.entryFee?.toStringAsFixed(2)}'
+                                      : 'Register Event',
+                                  style: const TextStyle(fontWeight: FontWeight.w700)),
                             ),
                           ),
                         ),
