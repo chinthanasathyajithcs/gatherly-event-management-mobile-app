@@ -41,10 +41,19 @@ class EventModel {
   final int? attendeeCount;
   final List<String> joinedParticipantIds;
   final int joinedParticipantCount;
+  final List<String> scheduledByIds;
   final String description;
   final EventApprovalStatus approvalStatus;
   final String? posterImageUrl;
+  final bool isQnaEnabled;
+  final bool isQrAttendanceEnabled;
   final Timestamp? createdAt;
+  final Timestamp? approvalUpdatedAt;
+  final int durationHours;
+  final String? clubId;
+  final String? clubName;
+  final bool isPaidEvent;
+  final double? entryFee;
 
   EventModel({
     this.id,
@@ -60,10 +69,19 @@ class EventModel {
     this.attendeeCount,
     this.joinedParticipantIds = const [],
     this.joinedParticipantCount = 0,
+    this.scheduledByIds = const [],
     required this.description,
     this.approvalStatus = EventApprovalStatus.pending,
     this.posterImageUrl,
+    this.isQnaEnabled = false,
+    this.isQrAttendanceEnabled = false,
     this.createdAt,
+    this.approvalUpdatedAt,
+    this.durationHours = 2,
+    this.clubId,
+    this.clubName,
+    this.isPaidEvent = false,
+    this.entryFee,
   });
 
   factory EventModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -118,16 +136,29 @@ class EventModel {
       joinedParticipantCount: map['joinedParticipantCount'] as int? ??
           map['joinedStudentCount'] as int? ??
           joinedParticipants.length,
+      scheduledByIds: (map['scheduledByIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
       description: map['description'] as String? ?? '',
       approvalStatus: parseEventApprovalStatus(statusRaw),
       posterImageUrl: (map['posterImageUrl'] as String?)?.trim().isEmpty == true
           ? null
           : (map['posterImageUrl'] as String?),
+      isQnaEnabled: map['isQnaEnabled'] as bool? ?? false,
+      isQrAttendanceEnabled: map['isQrAttendanceEnabled'] as bool? ?? false,
       createdAt: map['createdAt'] as Timestamp?,
+      approvalUpdatedAt: map['approvalUpdatedAt'] as Timestamp?,
+      durationHours: map['durationHours'] as int? ?? 2,
+      clubId: map['clubId'] as String?,
+      clubName: map['clubName'] as String?,
+      isPaidEvent: map['isPaidEvent'] as bool? ?? false,
+      entryFee: (map['entryFee'] as num?)?.toDouble(),
     );
   }
 
   Map<String, dynamic> toMap() {
+    final statusValue = approvalStatus.value.trim();
+
     return {
       'createdBy': createdBy,
       'coHostIds': coHostIds,
@@ -142,11 +173,19 @@ class EventModel {
       'attendeeCount': hasParticipantLimit ? attendeeCount : null,
       'joinedParticipantIds': joinedParticipantIds,
       'joinedParticipantCount': joinedParticipantCount,
+      'scheduledByIds': scheduledByIds,
       'description': description,
-      'approvalStatus': approvalStatus.value,
-      'status': approvalStatus.value,
+      'approvalStatus': statusValue,
+      'status': statusValue,
       'posterImageUrl': posterImageUrl,
+      'isQnaEnabled': isQnaEnabled,
+      'isQrAttendanceEnabled': isQrAttendanceEnabled,
       'createdAt': FieldValue.serverTimestamp(),
+      'durationHours': durationHours,
+      'clubId': clubId,
+      'clubName': clubName,
+      'isPaidEvent': isPaidEvent,
+      'entryFee': entryFee,
     };
   }
 }

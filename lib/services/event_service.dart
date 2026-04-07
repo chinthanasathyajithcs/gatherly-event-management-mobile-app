@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/app_notification_model.dart';
 import '../models/event_model.dart';
+import 'notification_service.dart';
 
 class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -56,6 +58,33 @@ class EventService {
     });
   }
 
+  Stream<List<EventModel>> streamEventsByStatus(EventApprovalStatus status) {
+    return _events
+        .where('approvalStatus', isEqualTo: status.value)
+        .snapshots()
+        .map((snapshot) {
+      final events = snapshot.docs.map(EventModel.fromDoc).toList();
+      events.sort((a, b) {
+        final aTime = a.createdAt?.toDate() ?? DateTime(2000);
+        final bTime = b.createdAt?.toDate() ?? DateTime(2000);
+        return bTime.compareTo(aTime);
+      });
+      return events;
+    });
+  }
+
+  Stream<List<EventModel>> streamPendingEvents() {
+    return streamEventsByStatus(EventApprovalStatus.pending);
+  }
+
+  Stream<List<EventModel>> streamAcceptedEvents() {
+    return streamEventsByStatus(EventApprovalStatus.accepted);
+  }
+
+  Stream<List<EventModel>> streamRejectedEvents() {
+    return streamEventsByStatus(EventApprovalStatus.rejected);
+  }
+
   Future<void> createEvent(EventModel event) async {
     await _events.add(event.toMap());
   }
@@ -64,10 +93,40 @@ class EventService {
     required String eventId,
     required EventApprovalStatus status,
   }) async {
+    final eventSnapshot = await _events.doc(eventId).get();
+    final eventData = eventSnapshot.data();
+    if (!eventSnapshot.exists || eventData == null) {
+      throw StateError('Event not found.');
+    }
+
+    final statusValue = status.value.trim();
     await _events.doc(eventId).update({
-      'approvalStatus': status.value,
-      'status': status.value,
+      'approvalStatus': statusValue,
+      'status': statusValue,
+      'approvalUpdatedAt': FieldValue.serverTimestamp(),
     });
+
+    final organizerIds = <String>{
+      (eventData['createdBy'] as String? ?? '').trim(),
+      ...((eventData['coHostIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .map((id) => id.trim())),
+    }..removeWhere((id) => id.isEmpty);
+
+    final eventName = (eventData['name'] as String? ?? 'your event').trim();
+
+    final isApproved = status == EventApprovalStatus.accepted;
+    await NotificationService.instance.addNotificationToUsers(
+      userIds: organizerIds,
+      title: isApproved ? 'Event approved' : 'Event update',
+      body: isApproved
+          ? '$eventName was approved by admin and is now visible to students.'
+          : '$eventName was rejected by admin. Please update and resubmit.',
+      type: isApproved
+          ? AppNotificationType.eventApproved
+          : AppNotificationType.eventRejected,
+      eventId: eventId,
+    );
   }
 
   Future<void> approveEvent(String eventId) {
@@ -81,6 +140,13 @@ class EventService {
     return updateEventStatus(
       eventId: eventId,
       status: EventApprovalStatus.rejected,
+    );
+  }
+
+  Future<void> resetEventToPending(String eventId) {
+    return updateEventStatus(
+      eventId: eventId,
+      status: EventApprovalStatus.pending,
     );
   }
 
@@ -102,6 +168,8 @@ class EventService {
     String? description,
     bool? hasParticipantLimit,
     int? attendeeCount,
+    bool? isPaidEvent,
+    double? entryFee,
     List<String>? coHostIds,
     Map<String, String>? coHostNamesById,
     bool resetApproval = false,
@@ -130,6 +198,15 @@ class EventService {
     if (attendeeCount != null) {
       updates['attendeeCount'] = attendeeCount;
     }
+    if (isPaidEvent != null) {
+      updates['isPaidEvent'] = isPaidEvent;
+      if (!isPaidEvent) {
+        updates['entryFee'] = null;
+      }
+    }
+    if (entryFee != null) {
+      updates['entryFee'] = entryFee;
+    }
     if (coHostIds != null) {
       updates['coHostIds'] = coHostIds;
     }
@@ -146,8 +223,14 @@ class EventService {
     }
   }
 
+  Future<void> deleteEvent(String eventId) async {
+    await _events.doc(eventId).delete();
+  }
+
   Future<void> joinEvent(
-      {required String eventId, required String userId}) async {
+      {required String eventId,
+      required String userId,
+      Map<String, dynamic>? paymentDetails}) async {
     final docRef = _events.doc(eventId);
 
     await _firestore.runTransaction((tx) async {
@@ -157,6 +240,7 @@ class EventService {
       }
 
       final map = snapshot.data() ?? <String, dynamic>{};
+      final isPaidEvent = map['isPaidEvent'] as bool? ?? false;
       final hasLimit = map['hasParticipantLimit'] as bool? ?? false;
       final limit = map['attendeeCount'] as int?;
       final joined = (map['joinedParticipantIds'] as List<dynamic>? ??
@@ -164,18 +248,66 @@ class EventService {
               const [])
           .whereType<String>()
           .toList();
+      final updates = <String, dynamic>{
+        'scheduledByIds': FieldValue.arrayUnion([userId]),
+      };
 
-      if (joined.contains(userId)) return;
-
-      if (hasLimit && limit != null && joined.length >= limit) {
-        throw StateError('Participant limit reached for this event.');
+      if (isPaidEvent && paymentDetails == null) {
+        throw StateError('Payment is required for this event.');
       }
 
-      tx.update(docRef, {
-        'joinedParticipantIds': FieldValue.arrayUnion([userId]),
-        'joinedParticipantCount': FieldValue.increment(1),
-      });
+      if (!joined.contains(userId)) {
+        if (hasLimit && limit != null && joined.length >= limit) {
+          throw StateError('Participant limit reached for this event.');
+        }
+
+        updates['joinedParticipantIds'] = FieldValue.arrayUnion([userId]);
+        updates['joinedParticipantCount'] = FieldValue.increment(1);
+      }
+
+      tx.update(docRef, updates);
     });
+
+    await docRef.collection('registrations').doc(userId).set({
+      'userId': userId,
+      'eventId': eventId,
+      'paymentRequired': paymentDetails != null,
+      'paymentStatus': paymentDetails == null ? 'not_required' : 'paid',
+      'paymentProvider': paymentDetails?['paymentProvider'] ?? 'paypal',
+      'paymentAmount': paymentDetails?['amount'],
+      'currency': paymentDetails?['currency'] ?? 'LKR',
+      'paymentTransactionId': paymentDetails?['transactionId'],
+      'registeredAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final eventSnapshot = await docRef.get();
+    final map = eventSnapshot.data() ?? <String, dynamic>{};
+    final eventName = (map['name'] as String? ?? 'Event').trim();
+
+    await NotificationService.instance.addNotificationToUser(
+      userId: userId,
+      title: 'Registration confirmed',
+      body: 'You are registered for $eventName.',
+      type: AppNotificationType.eventRegistration,
+      eventId: eventId,
+    );
+
+    final organizerIds = <String>{
+      (map['createdBy'] as String? ?? '').trim(),
+      ...((map['coHostIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .map((id) => id.trim())),
+    }
+      ..remove(userId)
+      ..removeWhere((id) => id.isEmpty);
+
+    await NotificationService.instance.addNotificationToUsers(
+      userIds: organizerIds,
+      title: 'New registration',
+      body: 'A student registered for $eventName.',
+      type: AppNotificationType.eventUpdate,
+      eventId: eventId,
+    );
   }
 
   Future<void> leaveEvent(
@@ -200,7 +332,10 @@ class EventService {
       tx.update(docRef, {
         'joinedParticipantIds': FieldValue.arrayRemove([userId]),
         'joinedParticipantCount': FieldValue.increment(-1),
+        'scheduledByIds': FieldValue.arrayRemove([userId]),
       });
     });
+
+    await docRef.collection('registrations').doc(userId).delete();
   }
 }

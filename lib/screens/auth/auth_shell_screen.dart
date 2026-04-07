@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import '../admin/admin_dashboard_screen.dart';
 import '../student/student_dashboard_screen.dart';
 import 'admin_login_screen.dart';
 import 'google_profile_completion_screen.dart';
@@ -105,16 +106,25 @@ class _AuthShellScreenState extends State<AuthShellScreen> {
     });
 
     try {
-      await _authService.studentLogin(
+      final user = await _authService.studentLogin(
         email: _loginEmailCtrl.text,
         password: _loginPassCtrl.text,
       );
       if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
-        (_) => false,
-      );
+      
+      if (user?.role == 'admin') {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+          (_) => false,
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
+          (_) => false,
+        );
+      }
     } catch (e) {
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -186,11 +196,19 @@ class _AuthShellScreenState extends State<AuthShellScreen> {
           (_) => false,
         );
       } else {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
-          (_) => false,
-        );
+        if (user.role == 'admin') {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+            (_) => false,
+          );
+        } else {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
+            (_) => false,
+          );
+        }
       }
     } catch (e) {
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
@@ -262,7 +280,7 @@ class _AuthShellScreenState extends State<AuthShellScreen> {
                     const SizedBox(height: 14),
                     const Center(
                       child: Text(
-                        'UniHub',
+                        'Gatherly',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Color(0xFF111827),

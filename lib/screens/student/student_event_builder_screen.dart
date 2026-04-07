@@ -1,11 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../models/event_model.dart';
-import '../../../services/event_service.dart';
-import '../../../services/gemini_event_assistant_service.dart';
+import '../../models/event_model.dart';
+import '../../services/event_service.dart';
+import '../../services/gemini_event_assistant_service.dart';
 
 class StudentEventBuilderScreen extends StatefulWidget {
   const StudentEventBuilderScreen({super.key});
@@ -20,10 +21,15 @@ enum _EventBuilderStep {
   name,
   date,
   time,
+  duration,
   location,
   participantMode,
   attendees,
   description,
+  qnaMode,
+  qrAttendanceMode,
+  isPaidMode,
+  fee,
   review
 }
 
@@ -34,6 +40,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
 
   final List<String> _categories = const [
     'Hackathon',
@@ -59,17 +66,27 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   String? _name;
   DateTime? _date;
   TimeOfDay? _time;
+  int? _durationHours;
   String? _location;
   bool _hasParticipantLimit = true;
   bool _participantModeChosen = false;
   int? _attendees;
   String? _description;
   String? _posterImageUrl;
+  bool _isQnaEnabled = false;
+  bool _qnaModeChosen = false;
+  bool _isQrAttendanceEnabled = false;
+  bool _qrAttendanceModeChosen = false;
   bool _saving = false;
   bool _thinking = false;
   bool _uploadingPoster = false;
+  bool _isPaidEvent = false;
+  bool _isPaidModeChosen = false;
+  double? _entryFee;
+  String? _clubId;
+  String? _clubName;
 
-  static const int _builderStepsCount = 8;
+  static const int _builderStepsCount = 13;
 
   @override
   void initState() {
@@ -82,6 +99,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -138,6 +156,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     _addUser(_formatDate(_date!));
     _step = _firstMissingStep();
     _addAssistant(_nextPromptForStep(_step));
+    _focusNode.requestFocus();
   }
 
   Future<void> _pickTimeFromClock() async {
@@ -151,6 +170,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     _addUser(_formatTime(_time!));
     _step = _firstMissingStep();
     _addAssistant(_nextPromptForStep(_step));
+    _focusNode.requestFocus();
   }
 
   Future<void> _submitInput() async {
@@ -174,7 +194,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       } catch (_) {
         aiResult = null;
       } finally {
-        if (mounted) setState(() => _thinking = false);
+        if (mounted) {
+          setState(() => _thinking = false);
+          if (_step != _EventBuilderStep.review) {
+            _focusNode.requestFocus();
+          }
+        }
       }
     }
 
@@ -201,6 +226,9 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     final aiPosterImageUrl = _extractString(extracted['posterImageUrl']);
     final aiHasLimit = _extractBool(extracted['hasParticipantLimit']);
     final aiAttendeeCount = _extractInt(extracted['attendeeCount']);
+    final aiIsQnaEnabled = _extractBool(extracted['isQnaEnabled']);
+    final aiIsQrAttendanceEnabled =
+        _extractBool(extracted['isQrAttendanceEnabled']);
 
     if (_tryPlannerAdvanceFromAi(
       aiCategory: aiCategory,
@@ -212,6 +240,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       aiPosterImageUrl: aiPosterImageUrl,
       aiHasLimit: aiHasLimit,
       aiAttendeeCount: aiAttendeeCount,
+      aiIsQnaEnabled: aiIsQnaEnabled,
+      aiIsQrAttendanceEnabled: aiIsQrAttendanceEnabled,
       confidence: aiResult?.confidence,
     )) {
       return;
@@ -279,6 +309,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           return;
         }
         _time = parsedTime;
+        _step = _EventBuilderStep.duration;
+        _addAssistant('How long is the event in hours? (Example: 2, 4)');
+        break;
+      case _EventBuilderStep.duration:
+        final extractedDuration = RegExp(r'\d+').firstMatch(input)?.group(0);
+        final parsedDuration = int.tryParse(extractedDuration ?? '');
+        if (parsedDuration == null || parsedDuration <= 0) {
+          _addAssistant(
+              'Please enter a valid duration in hours. Example: 2, 4');
+          return;
+        }
+        _durationHours = parsedDuration;
         _step = _EventBuilderStep.location;
         _addAssistant('Where is the event location?');
         break;
@@ -358,8 +400,103 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
           return;
         }
         _description = candidateDescription;
+        _step = _EventBuilderStep.qnaMode;
+        _addAssistant(
+            'Perfect. Will this event feature a live Q&A session? Reply yes or no.');
+        break;
+      case _EventBuilderStep.qnaMode:
+        final normalized = input.toLowerCase();
+        final yesValues = {'yes', 'y', 'enable', 'sure'};
+        final noValues = {'no', 'n', 'disable', 'skip'};
+        final hasYesSignal = yesValues.any(normalized.contains);
+        final hasNoSignal = noValues.any(normalized.contains);
+
+        if (hasYesSignal) {
+          _isQnaEnabled = true;
+          _qnaModeChosen = true;
+          _step = _EventBuilderStep.qrAttendanceMode;
+          _addAssistant(
+              'Live Q&A enabled. Will this event require QR code check-in for attendance? Reply yes or no.');
+          return;
+        }
+
+        if (hasNoSignal) {
+          _isQnaEnabled = false;
+          _qnaModeChosen = true;
+          _step = _EventBuilderStep.qrAttendanceMode;
+          _addAssistant(
+              'Live Q&A skipped. Will this event require QR code check-in for attendance? Reply yes or no.');
+          return;
+        }
+
+        _addAssistant('Please answer with yes or no.');
+        break;
+      case _EventBuilderStep.qrAttendanceMode:
+        final normalizedQr = input.toLowerCase();
+        final yesValuesQr = {'yes', 'y', 'enable', 'sure', 'require'};
+        final noValuesQr = {'no', 'n', 'disable', 'skip'};
+        final hasYesSignalQr = yesValuesQr.any(normalizedQr.contains);
+        final hasNoSignalQr = noValuesQr.any(normalizedQr.contains);
+
+        if (hasYesSignalQr) {
+          _isQrAttendanceEnabled = true;
+          _qrAttendanceModeChosen = true;
+          _step = _EventBuilderStep.isPaidMode;
+          _addAssistant(
+              'QR check-in enabled. Is this a paid event? Reply yes or no.');
+          return;
+        }
+
+        if (hasNoSignalQr) {
+          _isQrAttendanceEnabled = false;
+          _qrAttendanceModeChosen = true;
+          _step = _EventBuilderStep.isPaidMode;
+          _addAssistant(
+              'QR check-in skipped. Is this a paid event? Reply yes or no.');
+          return;
+        }
+
+        _addAssistant('Please answer with yes or no.');
+        break;
+      case _EventBuilderStep.isPaidMode:
+        final normalizedPaid = input.toLowerCase();
+        final yesValuesPaid = {'yes', 'y', 'paid', 'sure'};
+        final noValuesPaid = {'no', 'n', 'free', 'skip'};
+        final hasYesSignalPaid = yesValuesPaid.any(normalizedPaid.contains);
+        final hasNoSignalPaid = noValuesPaid.any(normalizedPaid.contains);
+
+        if (hasYesSignalPaid) {
+          _isPaidEvent = true;
+          _isPaidModeChosen = true;
+          _step = _EventBuilderStep.fee;
+          _addAssistant(
+              'Got it. What is the entry fee amount in LKR? (e.g., LKR 250)');
+          return;
+        }
+
+        if (hasNoSignalPaid) {
+          _isPaidEvent = false;
+          _isPaidModeChosen = true;
+          _step = _EventBuilderStep.review;
+          _addAssistant(
+              'Free event selected. Review the event details below and save.');
+          return;
+        }
+
+        _addAssistant('Please answer with yes or no.');
+        break;
+      case _EventBuilderStep.fee:
+        final extractedFee = RegExp(r'\d+(\.\d+)?').firstMatch(input)?.group(0);
+        final fee = double.tryParse(extractedFee ?? '');
+        if (fee == null || fee <= 0) {
+          _addAssistant(
+              'Please provide a valid entry fee amount in LKR (e.g., LKR 250).');
+          return;
+        }
+        _entryFee = fee;
         _step = _EventBuilderStep.review;
-        _addAssistant('Perfect. Review the event details below and save.');
+        _addAssistant(
+            'Entry fee set. Review the event details below and save.');
         break;
       case _EventBuilderStep.review:
         break;
@@ -381,6 +518,10 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       'attendeeCount': _attendees,
       'description': _description,
       'posterImageUrl': _posterImageUrl,
+      'isQnaEnabled': _isQnaEnabled,
+      'isQrAttendanceEnabled': _isQrAttendanceEnabled,
+      'isPaidEvent': _isPaidEvent,
+      'entryFee': _entryFee,
     };
   }
 
@@ -394,6 +535,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     required String? aiPosterImageUrl,
     required bool? aiHasLimit,
     required int? aiAttendeeCount,
+    required bool? aiIsQnaEnabled,
+    required bool? aiIsQrAttendanceEnabled,
     required double? confidence,
   }) {
     var changed = false;
@@ -461,6 +604,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       }
     }
 
+    if (!_qnaModeChosen && aiIsQnaEnabled != null) {
+      _isQnaEnabled = aiIsQnaEnabled;
+      _qnaModeChosen = true;
+      changed = true;
+    }
+
+    if (!_qrAttendanceModeChosen && aiIsQrAttendanceEnabled != null) {
+      _isQrAttendanceEnabled = aiIsQrAttendanceEnabled;
+      _qrAttendanceModeChosen = true;
+      changed = true;
+    }
+
     final shouldAdvance = changed && (confidence ?? 0) >= 0.55;
     if (!shouldAdvance) return false;
 
@@ -481,11 +636,16 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     if (_name == null) return _EventBuilderStep.name;
     if (_date == null) return _EventBuilderStep.date;
     if (_time == null) return _EventBuilderStep.time;
+    if (_durationHours == null) return _EventBuilderStep.duration;
     if (_location == null) return _EventBuilderStep.location;
     if (!_participantModeChosen) return _EventBuilderStep.participantMode;
     if (_hasParticipantLimit && _attendees == null)
       return _EventBuilderStep.attendees;
     if (_description == null) return _EventBuilderStep.description;
+    if (!_qnaModeChosen) return _EventBuilderStep.qnaMode;
+    if (!_qrAttendanceModeChosen) return _EventBuilderStep.qrAttendanceMode;
+    if (!_isPaidModeChosen) return _EventBuilderStep.isPaidMode;
+    if (_isPaidEvent && _entryFee == null) return _EventBuilderStep.fee;
     return _EventBuilderStep.review;
   }
 
@@ -499,6 +659,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'What is the event date? (Example: 2026-04-15 or 15/04/2026)';
       case _EventBuilderStep.time:
         return 'What is the start time? (Example: 14:30, 2:30 PM, or 2pm)';
+      case _EventBuilderStep.duration:
+        return 'How long is the event in hours? (Example: 2, 4)';
       case _EventBuilderStep.location:
         return 'Where is the event location?';
       case _EventBuilderStep.participantMode:
@@ -507,6 +669,14 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'How many attendees are expected?';
       case _EventBuilderStep.description:
         return 'Add a short event description or theme.';
+      case _EventBuilderStep.qnaMode:
+        return 'Will this event feature a live Q&A session? Reply yes or no.';
+      case _EventBuilderStep.qrAttendanceMode:
+        return 'Will this event require QR code check-in for attendance? Reply yes or no.';
+      case _EventBuilderStep.isPaidMode:
+        return 'Is this a paid event? Reply yes or no.';
+      case _EventBuilderStep.fee:
+        return 'What is the entry fee amount in LKR? (e.g., LKR 250)';
       case _EventBuilderStep.review:
         return 'Review the summary and save when ready.';
     }
@@ -714,9 +884,11 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         _name == null ||
         _date == null ||
         _time == null ||
+        _durationHours == null ||
         _location == null ||
         (_hasParticipantLimit && _attendees == null) ||
-        _description == null) {
+        _description == null ||
+        (_isPaidEvent && _entryFee == null)) {
       _addAssistant(
           'Some details are still missing. Please complete the flow.');
       return;
@@ -733,11 +905,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         name: _name!,
         date: _date!,
         time: TimeOfDayData(hour: _time!.hour, minute: _time!.minute),
+        durationHours: _durationHours ?? 2,
         location: _location!,
         hasParticipantLimit: hasParticipantLimit,
         attendeeCount: hasParticipantLimit ? _attendees : null,
         description: _description!,
         posterImageUrl: _normalizePosterUrl(_posterImageUrl),
+        isQnaEnabled: _isQnaEnabled,
+        isQrAttendanceEnabled: _isQrAttendanceEnabled,
+        isPaidEvent: _isPaidEvent,
+        entryFee: _entryFee,
+        clubId: _clubId,
+        clubName: _clubName,
       );
       await _eventService.createEvent(event);
 
@@ -761,29 +940,48 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       _name = null;
       _date = null;
       _time = null;
+      _durationHours = null;
       _location = null;
       _hasParticipantLimit = true;
       _participantModeChosen = false;
       _attendees = null;
       _description = null;
       _posterImageUrl = null;
+      _isQnaEnabled = false;
+      _qnaModeChosen = false;
+      _isQrAttendanceEnabled = false;
+      _qrAttendanceModeChosen = false;
+      _isPaidEvent = false;
+      _isPaidModeChosen = false;
+      _entryFee = null;
+      _clubId = null;
+      _clubName = null;
       _step = _EventBuilderStep.category;
     });
     _addAssistant('Let us build a new event. First, pick a category.');
+    _focusNode.requestFocus();
   }
 
   Future<void> _openEditSummarySheet() async {
     final nameCtrl = TextEditingController(text: _name ?? '');
+    final durationCtrl =
+        TextEditingController(text: (_durationHours ?? 2).toString());
     final locationCtrl = TextEditingController(text: _location ?? '');
     final attendeesCtrl =
         TextEditingController(text: (_attendees ?? '').toString());
     final descriptionCtrl = TextEditingController(text: _description ?? '');
     final posterCtrl = TextEditingController(text: _posterImageUrl ?? '');
 
+    final entryFeeCtrl =
+        TextEditingController(text: (_entryFee ?? '').toString());
+
     String tempCategory = _category ?? _categories.first;
     DateTime tempDate = _date ?? DateTime.now();
     TimeOfDay tempTime = _time ?? const TimeOfDay(hour: 9, minute: 0);
     bool tempHasParticipantLimit = _hasParticipantLimit;
+    bool tempIsQnaEnabled = _isQnaEnabled;
+    bool tempIsQrAttendanceEnabled = _isQrAttendanceEnabled;
+    bool tempIsPaidEvent = _isPaidEvent;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -867,6 +1065,13 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     ),
                     const SizedBox(height: 10),
                     TextField(
+                      controller: durationCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration:
+                          const InputDecoration(labelText: 'Duration (hours)'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
                       controller: locationCtrl,
                       decoration: const InputDecoration(labelText: 'Location'),
                     ),
@@ -889,6 +1094,47 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                       keyboardType: TextInputType.number,
                       decoration:
                           const InputDecoration(labelText: 'Attendee count'),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: tempIsQnaEnabled,
+                      onChanged: (value) {
+                        setModalState(() => tempIsQnaEnabled = value);
+                      },
+                      title: const Text('Enable Live Q&A Session'),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: tempIsQrAttendanceEnabled,
+                      onChanged: (value) {
+                        setModalState(() => tempIsQrAttendanceEnabled = value);
+                      },
+                      title: const Text('Require QR check-in for attendance'),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: tempIsPaidEvent,
+                      onChanged: (value) {
+                        setModalState(() => tempIsPaidEvent = value);
+                        if (!value) {
+                          entryFeeCtrl.clear();
+                        }
+                      },
+                      title: const Text('Is this a paid event?'),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: entryFeeCtrl,
+                      enabled: tempIsPaidEvent,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Entry Fee amount (LKR)',
+                        hintText: 'e.g., 250',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -940,14 +1186,20 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: () {
+                          final duration =
+                              int.tryParse(durationCtrl.text.trim());
                           final attendees =
                               int.tryParse(attendeesCtrl.text.trim());
                           final requiresAttendees = tempHasParticipantLimit;
+                          final fee = double.tryParse(entryFeeCtrl.text.trim());
                           if (nameCtrl.text.trim().isEmpty ||
+                              duration == null ||
+                              duration <= 0 ||
                               locationCtrl.text.trim().isEmpty ||
                               descriptionCtrl.text.trim().length < 10 ||
                               (requiresAttendees &&
-                                  (attendees == null || attendees <= 0))) {
+                                  (attendees == null || attendees <= 0)) ||
+                              (tempIsPaidEvent && (fee == null || fee <= 0))) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content:
@@ -962,6 +1214,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                             _date = DateTime(
                                 tempDate.year, tempDate.month, tempDate.day);
                             _time = tempTime;
+                            _durationHours = duration;
                             _location = locationCtrl.text.trim();
                             _hasParticipantLimit = tempHasParticipantLimit;
                             _participantModeChosen = true;
@@ -970,6 +1223,13 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                             _description = descriptionCtrl.text.trim();
                             _posterImageUrl =
                                 _normalizePosterUrl(posterCtrl.text.trim());
+                            _isQnaEnabled = tempIsQnaEnabled;
+                            _qnaModeChosen = true;
+                            _isQrAttendanceEnabled = tempIsQrAttendanceEnabled;
+                            _qrAttendanceModeChosen = true;
+                            _isPaidEvent = tempIsPaidEvent;
+                            _isPaidModeChosen = true;
+                            _entryFee = tempIsPaidEvent ? fee : null;
                             _step = _EventBuilderStep.review;
                           });
                           Navigator.pop(context);
@@ -1085,10 +1345,15 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     if (_name != null) count++;
     if (_date != null) count++;
     if (_time != null) count++;
+    if (_durationHours != null) count++;
     if (_location != null) count++;
     if (_participantModeChosen) count++;
     if (!_hasParticipantLimit || _attendees != null) count++;
     if (_description != null) count++;
+    if (_qnaModeChosen) count++;
+    if (_qrAttendanceModeChosen) count++;
+    if (_isPaidModeChosen) count++;
+    if (!_isPaidEvent || _entryFee != null) count++;
     return count;
   }
 
@@ -1102,6 +1367,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'Date';
       case _EventBuilderStep.time:
         return 'Time';
+      case _EventBuilderStep.duration:
+        return 'Duration';
       case _EventBuilderStep.location:
         return 'Location';
       case _EventBuilderStep.participantMode:
@@ -1110,6 +1377,14 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'Attendees';
       case _EventBuilderStep.description:
         return 'Description';
+      case _EventBuilderStep.qnaMode:
+        return 'Live Q&A';
+      case _EventBuilderStep.qrAttendanceMode:
+        return 'QR Check-in';
+      case _EventBuilderStep.isPaidMode:
+        return 'Paid Event';
+      case _EventBuilderStep.fee:
+        return 'Entry Fee';
       case _EventBuilderStep.review:
         return 'Review';
     }
@@ -1184,15 +1459,6 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                         backgroundColor: const Color(0xFFE7D9C8),
                         valueColor:
                             const AlwaysStoppedAnimation(Color(0xFFCB6D22)),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'The assistant will collect category, name, date, time, location, and description. Participant count is optional per event.',
-                      style: TextStyle(
-                        color: Color(0xFF4E6076),
-                        height: 1.45,
-                        fontSize: 15,
                       ),
                     ),
                   ],
@@ -1288,9 +1554,12 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                     Expanded(
                       child: TextField(
                         controller: _inputController,
+                        focusNode: _focusNode,
                         enabled: !isReview && !_saving && !_thinking,
+                        keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
                         minLines: 1,
-                        maxLines: 3,
+                        maxLines: 4,
                         onSubmitted: (_) => _submitInput(),
                         decoration: InputDecoration(
                           border: InputBorder.none,
@@ -1374,6 +1643,9 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
               label: 'Date', value: _date == null ? '-' : _formatDate(_date!)),
           _SummaryLine(
               label: 'Time', value: _time == null ? '-' : _formatTime(_time!)),
+          _SummaryLine(
+              label: 'Duration',
+              value: _durationHours == null ? '-' : '${_durationHours} hours'),
           _SummaryLine(label: 'Location', value: _location ?? '-'),
           _SummaryLine(
             label: 'Participant count',
@@ -1382,7 +1654,76 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
                 : 'Not required',
           ),
           const _SummaryLine(label: 'Approval status', value: 'Pending'),
+          _SummaryLine(
+            label: 'Live Q&A',
+            value: _isQnaEnabled ? 'Enabled' : 'Disabled',
+          ),
+          _SummaryLine(
+            label: 'Paid Event',
+            value: _isPaidEvent
+                ? 'Yes (Rs. ${_entryFee?.toStringAsFixed(2) ?? '0.00'})'
+                : 'No (Free)',
+          ),
           _SummaryLine(label: 'Description', value: _description ?? '-'),
+          const SizedBox(height: 12),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('clubs')
+                .orderBy('name')
+                .snapshots(),
+            builder: (context, snapshot) {
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: DropdownButtonFormField<String?>(
+                  value: _clubId,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Club (Optional)',
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'No club (Independent)',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                    ...docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return DropdownMenuItem<String?>(
+                        value: doc.id,
+                        child: Text(
+                          data['name']?.toString() ?? 'Unnamed club',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _clubId = val;
+                      if (val == null) {
+                        _clubName = null;
+                      } else {
+                        final data = docs.firstWhere((d) => d.id == val).data()
+                            as Map<String, dynamic>;
+                        _clubName = data['name']?.toString();
+                      }
+                    });
+                  },
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 8),
           _SummaryLine(
             label: 'Poster',

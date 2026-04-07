@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../models/event_model.dart';
-import '../../../models/user_model.dart';
-import '../../../services/auth_service.dart';
-import '../../../services/event_service.dart';
+import '../../models/event_model.dart';
+import '../../models/user_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/event_service.dart';
+import '../../widgets/organizer_event_card.dart';
+import 'qr_scanner_page.dart';
 import 'student_event_builder_screen.dart';
 
 class StudentOrganizePage extends StatelessWidget {
@@ -952,16 +956,10 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
               children: [
                 // Event cards
                 ...List.generate(visibleEvents.length, (i) {
-                  return _AnimatedEventCard(
+                  return AnimatedOrganizerCard(
                     index: i,
-                    child: _EventCard(
+                    child: OrganizerEventCard(
                       event: visibleEvents[i],
-                      formatDate: _formatDate,
-                      formatTime: _formatTime,
-                      statusLabel: _statusLabel,
-                      statusIcon: _statusIcon,
-                      statusColor: _statusColor,
-                      statusBg: _statusBg,
                       onTap: () => _openEventDetail(context, visibleEvents[i]),
                       onPosterTap: () =>
                           _openPosterEditor(context, visibleEvents[i]),
@@ -1093,491 +1091,6 @@ class _CreatedEventsSectionState extends State<_CreatedEventsSection> {
 }
 
 // ---------------------------------------------------------------------------
-// Animated wrapper for staggered card entry
-// ---------------------------------------------------------------------------
-
-class _AnimatedEventCard extends StatefulWidget {
-  final int index;
-  final Widget child;
-
-  const _AnimatedEventCard({required this.index, required this.child});
-
-  @override
-  State<_AnimatedEventCard> createState() => _AnimatedEventCardState();
-}
-
-class _AnimatedEventCardState extends State<_AnimatedEventCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _fadeAnim;
-  late final Animation<Offset> _slideAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 450),
-    );
-    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
-
-    Future.delayed(Duration(milliseconds: 80 * widget.index), () {
-      if (mounted) _ctrl.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(
-        position: _slideAnim,
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Event card (main list card)
-// ---------------------------------------------------------------------------
-
-class _EventCard extends StatelessWidget {
-  final EventModel event;
-  final String Function(DateTime) formatDate;
-  final String Function(TimeOfDayData) formatTime;
-  final String Function(EventApprovalStatus) statusLabel;
-  final IconData Function(EventApprovalStatus) statusIcon;
-  final Color Function(EventApprovalStatus) statusColor;
-  final Color Function(EventApprovalStatus) statusBg;
-  final VoidCallback onTap;
-  final VoidCallback onPosterTap;
-
-  const _EventCard({
-    required this.event,
-    required this.formatDate,
-    required this.formatTime,
-    required this.statusLabel,
-    required this.statusIcon,
-    required this.statusColor,
-    required this.statusBg,
-    required this.onTap,
-    required this.onPosterTap,
-  });
-
-  String _participantLabel() {
-    if (!event.hasParticipantLimit) {
-      return 'Open event';
-    }
-
-    return '${event.joinedParticipantCount}/${event.attendeeCount ?? '∞'}';
-  }
-
-  static const _categoryGradients = {
-    'hackathon': [Color(0xFF0D1B2E), Color(0xFF1D4E89)],
-    'workshop': [Color(0xFF1F6E8C), Color(0xFF2E8A99)],
-    'seminar': [Color(0xFF6A4C93), Color(0xFF9C6ADE)],
-    'conference': [Color(0xFF213555), Color(0xFF4F709C)],
-    'festival': [Color(0xFFB84A00), Color(0xFFFF8A3D)],
-    'meetup': [Color(0xFF355E3B), Color(0xFF5F8D4E)],
-    'webinar': [Color(0xFF005B96), Color(0xFF00A8CC)],
-    'competition': [Color(0xFF6A040F), Color(0xFFDC2F02)],
-    'career fair': [Color(0xFF3A0CA3), Color(0xFF4361EE)],
-    'networking': [Color(0xFF004B23), Color(0xFF38B000)],
-    'sports': [Color(0xFF14213D), Color(0xFFFCA311)],
-    'cultural': [Color(0xFF7B2CBF), Color(0xFFE0AAFF)],
-    'orientation': [Color(0xFF1E3A8A), Color(0xFF2563EB)],
-    'volunteering': [Color(0xFF166534), Color(0xFF22C55E)],
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = _categoryGradients[event.category.trim().toLowerCase()] ??
-        const [Color(0xFF374151), Color(0xFF6B7280)];
-    final sColor = statusColor(event.approvalStatus);
-    final sBg = statusBg(event.approvalStatus);
-    final sLabel = statusLabel(event.approvalStatus);
-    final sIcon = statusIcon(event.approvalStatus);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: const Color(0x0E0D1B2E)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0C0D1B2E),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Poster / gradient header
-                _buildPosterHeader(palette),
-
-                // Details body
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title + status
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              event.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF0D1B2E),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                height: 1.2,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: sBg,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: sColor.withValues(alpha: 0.25)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(sIcon, size: 13, color: sColor),
-                                const SizedBox(width: 4),
-                                Text(
-                                  sLabel,
-                                  style: TextStyle(
-                                    color: sColor,
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Meta info row
-                      Row(
-                        children: [
-                          _MetaChip(
-                            icon: Icons.calendar_today_rounded,
-                            label: formatDate(event.date),
-                          ),
-                          const SizedBox(width: 10),
-                          _MetaChip(
-                            icon: Icons.access_time_rounded,
-                            label: formatTime(event.time),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _MetaChip(
-                            icon: Icons.location_on_outlined,
-                            label: event.location,
-                            flex: true,
-                          ),
-                          const SizedBox(width: 10),
-                          _MetaChip(
-                            icon: Icons.people_outline_rounded,
-                            label: _participantLabel(),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Actions row
-                      Row(
-                        children: [
-                          _ActionChip(
-                            icon: Icons.image_outlined,
-                            label: 'Update Poster',
-                            onTap: onPosterTap,
-                          ),
-                          const Spacer(),
-                          const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 14,
-                            color: Color(0xFFABB8C8),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPosterHeader(List<Color> palette) {
-    if (event.posterImageUrl != null && event.posterImageUrl!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        child: SizedBox(
-          height: 140,
-          width: double.infinity,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.network(
-                event.posterImageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _fallbackGradientHeader(palette),
-              ),
-              // Gradient overlay for readability
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 56,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.35),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // Category chip on poster
-              Positioned(
-                top: 10,
-                left: 12,
-                child: _CategoryBadge(label: event.category),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return _fallbackGradientHeader(palette);
-  }
-
-  Widget _fallbackGradientHeader(List<Color> palette) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-      child: Container(
-        height: 100,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: palette,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Decorative circles
-            Positioned(
-              right: -20,
-              top: -25,
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 30,
-              bottom: -15,
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.06),
-                ),
-              ),
-            ),
-            // Category badge
-            Positioned(
-              top: 12,
-              left: 14,
-              child: _CategoryBadge(label: event.category),
-            ),
-            // Event initial letter
-            Positioned(
-              right: 18,
-              bottom: 10,
-              child: Text(
-                event.name.isNotEmpty ? event.name[0].toUpperCase() : 'E',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  fontSize: 56,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Small UI pieces
-// ---------------------------------------------------------------------------
-
-class _CategoryBadge extends StatelessWidget {
-  final String label;
-  const _CategoryBadge({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0x73000000),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.2,
-        ),
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool flex;
-
-  const _MetaChip({
-    required this.icon,
-    required this.label,
-    this.flex = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: const Color(0xFF8A98A9)),
-        const SizedBox(width: 5),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF4E6076),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-
-    if (flex) return Expanded(child: content);
-    return content;
-  }
-}
-
-class _ActionChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0F4FA),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0x0F0D1B2E)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: const Color(0xFF3A5068)),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF29425D),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Event detail bottom sheet
 // ---------------------------------------------------------------------------
 
@@ -1644,6 +1157,242 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
         );
       },
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    if (widget.event.id == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFF6F1EB),
+        title: const Text(
+          'Delete Event',
+          style:
+              TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0D1B2E)),
+        ),
+        content: const Text(
+          'Are you sure you want to permanently delete this event? This action cannot be undone.',
+          style: TextStyle(color: Color(0xFF3A5068)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                  color: Color(0xFF8A98A9), fontWeight: FontWeight.w700),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFD64545)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await widget.eventService.deleteEvent(widget.event.id!);
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Event deleted.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _processScannedQR(BuildContext context, String qrData) async {
+    try {
+      final data = jsonDecode(qrData);
+      final eventId = data['eventId'];
+      final studentId = data['studentId'];
+      final uid = data['uid'];
+      final name = data['name'];
+      final ticketPaidFlag = data['paid'];
+
+      if (eventId is! String || uid is! String || uid.trim().isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid QR: missing ticket fields.')),
+          );
+        }
+        return;
+      }
+
+      final cleanUid = uid.trim();
+      final cleanStudentId = studentId?.toString().trim() ?? '';
+      final cleanName = name?.toString().trim().isNotEmpty == true
+          ? name.toString().trim()
+          : 'Unknown';
+
+      if (eventId != widget.event.id) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Invalid QR: Ticket is for a different event!')),
+          );
+        }
+        return;
+      }
+
+      final eventRef =
+          FirebaseFirestore.instance.collection('events').doc(eventId);
+      final registrationRef =
+          eventRef.collection('registrations').doc(cleanUid);
+      final isJoinedParticipant = widget.event.joinedParticipantIds
+          .map((id) => id.trim())
+          .contains(cleanUid);
+
+      final isPaidMode = widget.event.isPaidEvent;
+      final ticketSaysPaid = ticketPaidFlag == true;
+
+      if (isPaidMode && !ticketSaysPaid) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Invalid paid ticket: this QR is not marked as a paid-event ticket.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      bool registrationConfirmed = false;
+      bool paymentConfirmed = !isPaidMode;
+
+      try {
+        final registrationDoc = await registrationRef.get();
+        if (!registrationDoc.exists) {
+          if (!isPaidMode && isJoinedParticipant) {
+            registrationConfirmed = true;
+          } else {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Check-in denied: attendee is not registered for this event.',
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+        } else {
+          registrationConfirmed = true;
+        }
+
+        if (isPaidMode) {
+          if (!registrationDoc.exists) {
+            paymentConfirmed = false;
+          } else {
+            final regData = registrationDoc.data() ?? <String, dynamic>{};
+            final paymentStatus =
+                regData['paymentStatus']?.toString().trim().toLowerCase() ?? '';
+            paymentConfirmed = paymentStatus == 'paid';
+          }
+        }
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied') rethrow;
+
+        registrationConfirmed = isJoinedParticipant;
+
+        // For paid events, do not assume payment if rules block registration read.
+        // Keep this strict to avoid accepting unpaid attendees.
+        paymentConfirmed = !isPaidMode;
+      }
+
+      if (!registrationConfirmed) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Check-in denied: attendee is not registered for this event.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!paymentConfirmed) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Check-in denied: paid-event ticket requires verified payment status.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final ref = FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('attendance')
+          .doc(cleanUid);
+
+      final doc = await ref.get();
+      if (doc.exists) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Already checked in: $cleanName ($cleanStudentId)'),
+            ),
+          );
+        }
+        return;
+      }
+
+      await ref.set({
+        'studentId': cleanStudentId,
+        'uid': cleanUid,
+        'name': cleanName,
+        'checkInMode': isPaidMode ? 'paid_ticket' : 'standard_qr',
+        'paymentVerified': paymentConfirmed,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isPaidMode
+                  ? 'Paid ticket verified. Checked in: $cleanName'
+                  : 'Checked in successfully: $cleanName',
+            ),
+            backgroundColor: const Color(0xFF2F9E44),
+          ),
+        );
+      }
+    } on FirebaseException catch (e) {
+      if (context.mounted) {
+        final isPermissionError = e.code == 'permission-denied';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isPermissionError
+                  ? 'Check-in blocked by Firestore rules. Allow host read access to registrations and write access to attendance.'
+                  : 'Check-in failed: ${e.message ?? e.code}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid QR code format.')),
+        );
+      }
+    }
   }
 
   @override
@@ -1831,6 +1580,32 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
                             ? '${widget.event.joinedParticipantCount} / ${widget.event.attendeeCount ?? '∞'} joined'
                             : 'Open event',
                       ),
+                      _DetailTile(
+                        icon: Icons.schedule_rounded,
+                        label: 'Duration',
+                        value:
+                            '${widget.event.durationHours} hour${widget.event.durationHours == 1 ? '' : 's'}',
+                      ),
+                      _DetailTile(
+                        icon: Icons.payments_outlined,
+                        label: 'Entry',
+                        value: widget.event.isPaidEvent
+                            ? 'Paid (Rs. ${widget.event.entryFee?.toStringAsFixed(2) ?? '0.00'})'
+                            : 'Free',
+                      ),
+                      _DetailTile(
+                        icon: Icons.live_help_outlined,
+                        label: 'Live Q&A',
+                        value:
+                            widget.event.isQnaEnabled ? 'Enabled' : 'Disabled',
+                      ),
+                      _DetailTile(
+                        icon: Icons.qr_code_scanner_rounded,
+                        label: 'QR Check-in',
+                        value: widget.event.isQrAttendanceEnabled
+                            ? 'Required'
+                            : 'Not required',
+                      ),
                       const SizedBox(height: 8),
 
                       _HostsSection(
@@ -1924,6 +1699,68 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
                           ),
                         ],
                       ),
+                      if (widget.event.id != null) ...[
+                        const SizedBox(height: 10),
+                        if (widget.event.isQrAttendanceEnabled)
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFCB6D22),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onPressed: () async {
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const QRScannerScreen()),
+                                );
+                                if (result != null && result is String) {
+                                  _processScannedQR(context, result);
+                                }
+                              },
+                              icon: const Icon(Icons.qr_code_scanner_rounded,
+                                  size: 19),
+                              label: const Text(
+                                'Scan Attendees',
+                                style: TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                        if (widget.event.isQrAttendanceEnabled)
+                          const SizedBox(height: 10),
+                        if (widget.event.isQrAttendanceEnabled)
+                          _LiveAttendanceSection(
+                            event: widget.event,
+                            authService: widget.authService,
+                          ),
+                        if (widget.event.isQrAttendanceEnabled)
+                          const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFD64545),
+                              side: const BorderSide(color: Color(0x30D64545)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            onPressed: () => _confirmDelete(context),
+                            icon: const Icon(Icons.delete_outline, size: 19),
+                            label: const Text(
+                              'Delete Event',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1972,7 +1809,7 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
               Positioned(
                 top: 12,
                 left: 14,
-                child: _CategoryBadge(label: widget.event.category),
+                child: OrganizerCategoryBadge(label: widget.event.category),
               ),
               // Expand hint icon
               Positioned(
@@ -2040,7 +1877,7 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
           Positioned(
             top: 12,
             left: 14,
-            child: _CategoryBadge(label: widget.event.category),
+            child: OrganizerCategoryBadge(label: widget.event.category),
           ),
           Positioned(
             right: 20,
@@ -2167,9 +2004,11 @@ class _EditEventSheetState extends State<_EditEventSheet> {
   final TextEditingController _locationCtrl = TextEditingController();
   final TextEditingController _descriptionCtrl = TextEditingController();
   final TextEditingController _attendeesCtrl = TextEditingController();
+  final TextEditingController _entryFeeCtrl = TextEditingController();
   final TextEditingController _hostSearchCtrl = TextEditingController();
   final FocusNode _hostSearchFocus = FocusNode();
   bool _hasParticipantLimit = false;
+  bool _isPaidEvent = false;
   Map<String, String> _coHostNamesById = <String, String>{};
   Map<String, String> _coHostDetailsById = <String, String>{};
   List<UserModel> _hostSearchResults = const [];
@@ -2184,7 +2023,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
       widget.event.approvalStatus == EventApprovalStatus.rejected;
   bool get _isPending =>
       widget.event.approvalStatus == EventApprovalStatus.pending;
-  bool get _canEditAttendees => _isPending || _isRejected;
+  bool get _canEditSensitiveSettings => _isPending || _isRejected;
 
   @override
   void initState() {
@@ -2195,7 +2034,9 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     _locationCtrl.text = widget.event.location;
     _descriptionCtrl.text = widget.event.description;
     _attendeesCtrl.text = widget.event.attendeeCount?.toString() ?? '';
+    _entryFeeCtrl.text = widget.event.entryFee?.toStringAsFixed(2) ?? '';
     _hasParticipantLimit = widget.event.hasParticipantLimit;
+    _isPaidEvent = widget.event.isPaidEvent;
     _coHostNamesById = Map<String, String>.from(widget.event.coHostNamesById);
     for (final id in widget.event.coHostIds) {
       _coHostNamesById.putIfAbsent(id, () => 'Host');
@@ -2239,6 +2080,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     _locationCtrl.dispose();
     _descriptionCtrl.dispose();
     _attendeesCtrl.dispose();
+    _entryFeeCtrl.dispose();
     _hostSearchCtrl.dispose();
     _hostSearchFocus.dispose();
     _hostSearchDebounce?.cancel();
@@ -2355,6 +2197,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     final location = _locationCtrl.text.trim();
     final description = _descriptionCtrl.text.trim();
     final attendees = int.tryParse(_attendeesCtrl.text.trim());
+    final fee = double.tryParse(_entryFeeCtrl.text.trim());
 
     if (location.length < 2) {
       _showError('Location is too short.');
@@ -2365,9 +2208,15 @@ class _EditEventSheetState extends State<_EditEventSheet> {
       return;
     }
     if (_hasParticipantLimit &&
-        _canEditAttendees &&
+        _canEditSensitiveSettings &&
         (attendees == null || attendees <= 0)) {
       _showError('Please enter a valid attendee count.');
+      return;
+    }
+    if (_isPaidEvent &&
+        _canEditSensitiveSettings &&
+        (fee == null || fee <= 0)) {
+      _showError('Please enter a valid entry fee amount.');
       return;
     }
 
@@ -2381,9 +2230,13 @@ class _EditEventSheetState extends State<_EditEventSheet> {
         timeMinute: _time.minute,
         location: location,
         description: description,
-        hasParticipantLimit: _canEditAttendees ? _hasParticipantLimit : null,
-        attendeeCount:
-            (_canEditAttendees && _hasParticipantLimit) ? attendees : null,
+        hasParticipantLimit:
+            _canEditSensitiveSettings ? _hasParticipantLimit : null,
+        attendeeCount: (_canEditSensitiveSettings && _hasParticipantLimit)
+            ? attendees
+            : null,
+        isPaidEvent: _canEditSensitiveSettings ? _isPaidEvent : null,
+        entryFee: (_canEditSensitiveSettings && _isPaidEvent) ? fee : null,
         coHostIds: _coHostNamesById.keys.toList(),
         coHostNamesById: _coHostNamesById,
         resetApproval: resubmit,
@@ -2565,7 +2418,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
             const SizedBox(height: 18),
 
             // Editable: Participant limit (only if pending/rejected)
-            if (_canEditAttendees) ...[
+            if (_canEditSensitiveSettings) ...[
               _sectionLabel('Participants'),
               const SizedBox(height: 8),
               Container(
@@ -2603,6 +2456,68 @@ class _EditEventSheetState extends State<_EditEventSheet> {
                   keyboardType: TextInputType.number,
                 ),
               ],
+              const SizedBox(height: 18),
+            ] else ...[
+              _LockedFieldDisplay(
+                icon: Icons.people_outline_rounded,
+                label: 'Participant Count Tracking',
+                value: widget.event.hasParticipantLimit
+                    ? 'Enabled (${widget.event.attendeeCount ?? 'N/A'} max)'
+                    : 'Disabled',
+              ),
+              const SizedBox(height: 18),
+            ],
+
+            // Editable: Pricing (only if pending/rejected)
+            if (_canEditSensitiveSettings) ...[
+              _sectionLabel('Pricing'),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0x120D1B2E)),
+                ),
+                child: SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  activeTrackColor: const Color(0xFFCB6D22),
+                  value: _isPaidEvent,
+                  onChanged: (v) {
+                    setState(() => _isPaidEvent = v);
+                    if (!v) _entryFeeCtrl.clear();
+                  },
+                  title: const Text(
+                    'Paid event',
+                    style: TextStyle(
+                      color: Color(0xFF1F334A),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              if (_isPaidEvent) ...[
+                const SizedBox(height: 10),
+                _StyledTextField(
+                  controller: _entryFeeCtrl,
+                  hint: 'Entry fee amount (LKR)',
+                  icon: Icons.payments_outlined,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+            ] else ...[
+              _LockedFieldDisplay(
+                icon: Icons.payments_outlined,
+                label: 'Pricing',
+                value: widget.event.isPaidEvent
+                    ? 'Paid (Rs. ${widget.event.entryFee?.toStringAsFixed(2) ?? '0.00'})'
+                    : 'Free',
+              ),
               const SizedBox(height: 18),
             ],
 
@@ -3312,5 +3227,360 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer>
         ],
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live Attendance Section
+// ---------------------------------------------------------------------------
+
+class _LiveAttendanceSection extends StatefulWidget {
+  final EventModel event;
+  final AuthService authService;
+
+  const _LiveAttendanceSection({
+    required this.event,
+    required this.authService,
+  });
+
+  @override
+  State<_LiveAttendanceSection> createState() => _LiveAttendanceSectionState();
+}
+
+class _LiveAttendanceSectionState extends State<_LiveAttendanceSection> {
+  bool _isLoadingProfiles = true;
+  final Map<String, UserModel> _profiles = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfiles();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveAttendanceSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.event.joinedParticipantIds.length !=
+        widget.event.joinedParticipantIds.length) {
+      _loadProfiles();
+    }
+  }
+
+  Future<void> _loadProfiles() async {
+    final idsToLoad = widget.event.joinedParticipantIds
+        .where((uid) => !_profiles.containsKey(uid))
+        .toList();
+    if (idsToLoad.isEmpty) {
+      if (mounted && _isLoadingProfiles) {
+        setState(() => _isLoadingProfiles = false);
+      }
+      return;
+    }
+
+    if (mounted && !_isLoadingProfiles)
+      setState(() => _isLoadingProfiles = true);
+
+    try {
+      final futures = idsToLoad.map((uid) async {
+        final profile = await widget.authService.getUserProfile(uid);
+        if (profile != null) {
+          _profiles[uid] = profile;
+        }
+      });
+      await Future.wait(futures);
+    } catch (e) {
+      debugPrint('Error loading attendee profiles: $e');
+    }
+
+    if (mounted) {
+      setState(() => _isLoadingProfiles = false);
+    }
+  }
+
+  Future<void> _removeAttendance(String uid, String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Attendance?'),
+        content: Text(
+            'Are you sure you want to remove $name from the checked-in list?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                const Text('Remove', style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final ref = FirebaseFirestore.instance
+        .collection('events')
+        .doc(widget.event.id)
+        .collection('attendance')
+        .doc(uid);
+
+    try {
+      await ref.delete();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating attendance: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.event.id == null) return const SizedBox();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.event.id)
+          .collection('attendance')
+          .snapshots(),
+      builder: (context, snapshot) {
+        final checkedInDocs = snapshot.data?.docs ?? [];
+        final checkedInIds = checkedInDocs.map((doc) => doc.id).toSet();
+
+        final extraNames = <String, String>{};
+        for (final doc in checkedInDocs) {
+          final data = doc.data() as Map<String, dynamic>?;
+          if (data != null &&
+              !widget.event.joinedParticipantIds.contains(doc.id)) {
+            final name = data['name'] ?? 'Unknown';
+            final sId = data['studentId'] ?? '';
+            extraNames[doc.id] = '$name ($sId)';
+          }
+        }
+
+        final total =
+            widget.event.joinedParticipantIds.length + extraNames.length;
+        final checkedInCount = checkedInDocs.length;
+
+        final progress = total > 0 ? (checkedInCount / total) : 0.0;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Live Attendance',
+              style: TextStyle(
+                color: Color(0xFF0D1B2E),
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0x0F0D1B2E)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '$checkedInCount / $total Checked In',
+                        style: const TextStyle(
+                          color: Color(0xFF3A5068),
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        '${(progress * 100).toInt()}%',
+                        style: const TextStyle(
+                          color: Color(0xFFCB6D22),
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: const Color(0xFFF6F1EB),
+                      color: const Color(0xFF1A8A5A),
+                      minHeight: 8,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (total == 0)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'No participants registered yet.',
+                          style:
+                              TextStyle(color: Color(0xFF8A98A9), fontSize: 13),
+                        ),
+                      ),
+                    )
+                  else if (_isLoadingProfiles && _profiles.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.5, color: Color(0xFFCB6D22)),
+                        ),
+                      ),
+                    )
+                  else
+                    ..._buildParticipantRows(checkedInIds, extraNames),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildParticipantRows(
+      Set<String> checkedInIds, Map<String, String> extraNames) {
+    if (checkedInIds.isEmpty) {
+      return [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Center(
+            child: Text(
+              'No attendees have checked in yet.',
+              style: TextStyle(color: Color(0xFF8A98A9), fontSize: 13),
+            ),
+          ),
+        )
+      ];
+    }
+
+    final allIds = checkedInIds.toList();
+
+    allIds.sort((a, b) {
+      final aName = _profiles[a]?.name ?? extraNames[a] ?? 'Z_Unknown';
+      final bName = _profiles[b]?.name ?? extraNames[b] ?? 'Z_Unknown';
+      return aName.compareTo(bName);
+    });
+
+    return allIds.map((uid) {
+      final profile = _profiles[uid];
+
+      final name = profile?.name ?? extraNames[uid] ?? 'Loading...';
+      final sId = profile?.studentId ?? (extraNames[uid] != null ? '' : '');
+      final displayId =
+          sId.isNotEmpty ? sId : (profile?.uid.substring(0, 8) ?? 'Unknown');
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE8F5EF),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: Color(0xFF1A8A5A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: Color(0xFF0D1B2E),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    displayId,
+                    style: const TextStyle(
+                      color: Color(0xFF8A98A9),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  _removeAttendance(uid, name);
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5EF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFFB2DFCA),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.check_circle_rounded,
+                        size: 13,
+                        color: Color(0xFF1A8A5A),
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Checked In',
+                        style: TextStyle(
+                          color: Color(0xFF1A8A5A),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
   }
 }

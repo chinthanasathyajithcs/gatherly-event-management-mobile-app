@@ -11,11 +11,12 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase
+  # Firebase (LATEST COMPATIBLE)
   firebase_core: ^3.0.0
   firebase_auth: ^5.0.0
   cloud_firestore: ^5.0.0
   firebase_storage: ^12.0.0
+  flutter_local_notifications: ^17.2.2
 
   # Google Sign-In
   google_sign_in: ^6.2.1
@@ -23,12 +24,26 @@ dependencies:
   # Environment variables
   flutter_dotenv: ^5.1.0
 
-  # Gemini
+  # Gemini AI
   google_generative_ai: ^0.4.7
 
   # UI
   cupertino_icons: ^1.0.6
   image_picker: ^1.1.2
+
+  # Calendar (YOUR FEATURE)
+  table_calendar: ^3.0.9
+  http: ^1.6.0
+  gal: ^2.3.2
+  share_plus: ^12.0.2
+  path_provider: ^2.1.5
+  iconsax: ^0.0.8
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.2.0
+  intl: ^0.19.0
+
+  #paypal
+  flutter_paypal: ^0.2.1
 
 dev_dependencies:
   flutter_test:
@@ -37,5 +52,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
   assets:
     - .env

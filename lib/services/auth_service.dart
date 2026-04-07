@@ -77,11 +77,6 @@ class AuthService {
         throw Exception('Profile not found. Please sign in again.');
       }
 
-      if (profile.role == 'admin') {
-        await _auth.signOut();
-        throw Exception('Please use the Admin login instead.');
-      }
-
       return profile;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
@@ -120,6 +115,82 @@ class AuthService {
     }
   }
 
+  Future<UserModel> createAdmin({
+    required String name,
+    required String email,
+    required String password,
+    required String currentAdminPassword,
+  }) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('Please sign in again before adding a new admin.');
+    }
+
+    final currentEmail = currentUser.email;
+    if (currentEmail == null || currentEmail.trim().isEmpty) {
+      throw Exception('Current admin email not available.');
+    }
+
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: currentEmail,
+        password: currentAdminPassword,
+      );
+    } on FirebaseAuthException catch (e) {
+      throw Exception('Current admin password is invalid.');
+    }
+
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+
+      final newUser = credential.user!;
+      final userModel = UserModel(
+        uid: newUser.uid,
+        email: email.trim(),
+        role: 'admin',
+        name: name.trim(),
+      );
+
+      await _firestore.collection('users').doc(newUser.uid).set(userModel.toMap());
+
+      await _auth.signOut();
+      await _auth.signInWithEmailAndPassword(
+        email: currentEmail,
+        password: currentAdminPassword,
+      );
+
+      return userModel;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_firebaseErrorMessage(e.code));
+    }
+  }
+
+  Future<UserModel> promoteStudentToAdmin(String studentUid) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(studentUid).get();
+      if (!userDoc.exists) {
+        throw Exception('User not found.');
+      }
+
+      final data = userDoc.data()!;
+      final currentRole = data['role'] as String? ?? 'student';
+
+      if (currentRole == 'admin') {
+        throw Exception('This user is already an admin.');
+      }
+
+      await _firestore.collection('users').doc(studentUid).update({'role': 'admin'});
+
+      return UserModel.fromMap({...data, 'role': 'admin'}, studentUid);
+    } on FirebaseException catch (e) {
+      debugPrint('Failed to promote student: ${e.message}');
+      throw Exception('Unable to promote student. Please try again.');
+    }
+  }
+
   Future<UserModel?> signInWithGoogle() async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -152,13 +223,6 @@ class AuthService {
             .doc(user.uid)
             .set(userModel.toMap());
         return userModel;
-      }
-
-      final role = data['role'];
-      if (role == 'admin') {
-        await _auth.signOut();
-        await _googleSignIn.signOut();
-        throw Exception('Admin accounts cannot use Google Sign-In.');
       }
 
       return UserModel.fromMap(data, user.uid);
@@ -206,6 +270,33 @@ class AuthService {
     } on FirebaseException catch (e) {
       debugPrint('Failed to complete Google profile for $uid: ${e.message}');
       throw Exception('Unable to save your profile. Please try again.');
+    }
+  }
+
+  Future<void> updateUserProfile({
+    required String uid,
+    String? name,
+    String? studentId,
+    String? department,
+    List<String>? preferredCategories,
+  }) async {
+    try {
+      final updates = <String, dynamic>{};
+      if (name != null) updates['name'] = name.trim();
+      if (studentId != null) updates['studentId'] = studentId.trim();
+      if (department != null) updates['department'] = department.trim();
+      if (preferredCategories != null) updates['preferredCategories'] = preferredCategories;
+
+      if (updates.isEmpty) return;
+
+      await _firestore.collection('users').doc(uid).update(updates);
+
+      if (name != null && uid == _auth.currentUser?.uid) {
+        await _auth.currentUser?.updateDisplayName(name.trim());
+      }
+    } on FirebaseException catch (e) {
+      debugPrint('Failed to update profile for $uid: ${e.message}');
+      throw Exception('Unable to update your profile right now.');
     }
   }
 

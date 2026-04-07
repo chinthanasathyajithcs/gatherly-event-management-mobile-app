@@ -1,9 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'pages/student_discovery_page.dart';
-import 'pages/student_organize_page.dart';
-import 'pages/student_profile_page.dart';
-import 'pages/student_schedule_page.dart';
+import '../../services/notification_service.dart';
+import 'student_discovery_page.dart';
+import 'student_organize_page.dart';
+import 'student_preferences_screen.dart';
+import 'student_profile_page.dart';
+import 'student_notifications_screen.dart';
+import 'student_schedule_page.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   final int initialIndex;
@@ -30,6 +34,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      StudentPreferencesBottomSheet.checkAndShow(context);
+    });
   }
 
   @override
@@ -39,7 +46,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _StudentTopBar(),
+            const _StudentTopBar(),
             Expanded(
               child: IndexedStack(
                 index: _selectedIndex,
@@ -103,64 +110,134 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 }
 
 class _StudentTopBar extends StatelessWidget {
-  const _StudentTopBar({super.key});
+  const _StudentTopBar();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Premium app name with gradient-like accent
-          ShaderMask(
-            shaderCallback: (bounds) => LinearGradient(
-              colors: const [Color(0xFFCB6D22), Color(0xFFF49B3B)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ).createShader(bounds),
-            child: const Text(
-              'UniHub',
-              style: TextStyle(
-                fontSize: 23,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: -0.3,
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0D1B2E).withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-          ),
-          const Spacer(),
-          // Notification bell with minimal modern style
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFCB6D22).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Brand name with decorative dots
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  'Gatherly',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0D1B2E),
+                    letterSpacing: -0.8,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Decorative dots
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFCB6D22),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF0D1B2E),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            child: IconButton(
-              tooltip: 'Notifications',
-              onPressed: () {
-                // TODO: Implement notifications for events and schedules
+            const Spacer(),
+            Builder(
+              builder: (context) {
+                final uid = FirebaseAuth.instance.currentUser?.uid;
+
+                return StreamBuilder<int>(
+                  stream: uid == null
+                      ? Stream<int>.value(0)
+                      : NotificationService.instance.streamUnreadCount(uid),
+                  builder: (context, snapshot) {
+                    final unreadCount = snapshot.data ?? 0;
+                    final hasUnread = unreadCount > 0;
+
+                    return Stack(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF6F1EB),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(15),
+                            clipBehavior: Clip.hardEdge,
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const StudentNotificationsScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Icon(
+                                Icons.notifications_none_rounded,
+                                color: Color(0xFF3A5068),
+                                size: 23,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (hasUnread)
+                          Positioned(
+                            top: 9,
+                            right: 11,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFCB6D22),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFF6F1EB),
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                );
               },
-              padding: const EdgeInsets.all(8),
-              icon: const Icon(
-                Icons.notifications_rounded,
-                color: Color(0xFFCB6D22),
-                size: 22,
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
