@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/app_notification_model.dart';
 import '../models/event_model.dart';
+import 'notification_service.dart';
 
 class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -91,12 +93,40 @@ class EventService {
     required String eventId,
     required EventApprovalStatus status,
   }) async {
+    final eventSnapshot = await _events.doc(eventId).get();
+    final eventData = eventSnapshot.data();
+    if (!eventSnapshot.exists || eventData == null) {
+      throw StateError('Event not found.');
+    }
+
     final statusValue = status.value.trim();
     await _events.doc(eventId).update({
       'approvalStatus': statusValue,
       'status': statusValue,
       'approvalUpdatedAt': FieldValue.serverTimestamp(),
     });
+
+    final organizerIds = <String>{
+      (eventData['createdBy'] as String? ?? '').trim(),
+      ...((eventData['coHostIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .map((id) => id.trim())),
+    }..removeWhere((id) => id.isEmpty);
+
+    final eventName = (eventData['name'] as String? ?? 'your event').trim();
+
+    final isApproved = status == EventApprovalStatus.accepted;
+    await NotificationService.instance.addNotificationToUsers(
+      userIds: organizerIds,
+      title: isApproved ? 'Event approved' : 'Event update',
+      body: isApproved
+          ? '$eventName was approved by admin and is now visible to students.'
+          : '$eventName was rejected by admin. Please update and resubmit.',
+      type: isApproved
+          ? AppNotificationType.eventApproved
+          : AppNotificationType.eventRejected,
+      eventId: eventId,
+    );
   }
 
   Future<void> approveEvent(String eventId) {
@@ -249,6 +279,35 @@ class EventService {
       'paymentTransactionId': paymentDetails?['transactionId'],
       'registeredAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    final eventSnapshot = await docRef.get();
+    final map = eventSnapshot.data() ?? <String, dynamic>{};
+    final eventName = (map['name'] as String? ?? 'Event').trim();
+
+    await NotificationService.instance.addNotificationToUser(
+      userId: userId,
+      title: 'Registration confirmed',
+      body: 'You are registered for $eventName.',
+      type: AppNotificationType.eventRegistration,
+      eventId: eventId,
+    );
+
+    final organizerIds = <String>{
+      (map['createdBy'] as String? ?? '').trim(),
+      ...((map['coHostIds'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .map((id) => id.trim())),
+    }
+      ..remove(userId)
+      ..removeWhere((id) => id.isEmpty);
+
+    await NotificationService.instance.addNotificationToUsers(
+      userIds: organizerIds,
+      title: 'New registration',
+      body: 'A student registered for $eventName.',
+      type: AppNotificationType.eventUpdate,
+      eventId: eventId,
+    );
   }
 
   Future<void> leaveEvent(

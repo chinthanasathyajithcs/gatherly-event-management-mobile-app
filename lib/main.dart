@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -8,6 +10,7 @@ import 'screens/auth/auth_shell_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/student/student_dashboard_screen.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +36,8 @@ void main() async {
     ),
   );
 
+  await NotificationService.instance.initialize();
+
   runApp(const MyApp());
 }
 
@@ -55,8 +60,34 @@ class MyApp extends StatelessWidget {
 }
 
 // Automatically routes user based on auth state + role
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  StreamSubscription<User?>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
+      if (user == null) {
+        await NotificationService.instance.clearSession();
+        return;
+      }
+
+      await NotificationService.instance.configureForSignedInUser(user);
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,10 +139,10 @@ class _AppLoadingScreen extends StatelessWidget {
         child: Container(
           width: 250,
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
+            borderRadius: BorderRadius.all(Radius.circular(24)),
+            boxShadow: [
               BoxShadow(
                 color: Color(0x120D1B2E),
                 blurRadius: 20,
@@ -119,9 +150,9 @@ class _AppLoadingScreen extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
+          child: const Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
+            children: [
               Icon(
                 Icons.auto_awesome,
                 color: Color(0xFFCB6D22),

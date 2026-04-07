@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/event_model.dart';
+import '../../models/app_notification_model.dart';
+import '../../services/notification_service.dart';
 
 class StudentQnaScreen extends StatefulWidget {
   final EventModel event;
@@ -17,7 +19,7 @@ class StudentQnaScreen extends StatefulWidget {
 class _StudentQnaScreenState extends State<StudentQnaScreen> {
   final TextEditingController _msgController = TextEditingController();
   final User? currentUser = FirebaseAuth.instance.currentUser;
-  
+
   CollectionReference get _qnaRef => FirebaseFirestore.instance
       .collection('events')
       .doc(widget.event.id)
@@ -32,11 +34,13 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
   Future<void> _sendMessage() async {
     final text = _msgController.text.trim();
     if (text.isEmpty || currentUser == null) return;
-    
+
     _msgController.clear();
-    
-    String senderName = currentUser!.displayName ?? currentUser!.email?.split('@').first ?? 'Student';
-    
+
+    String senderName = currentUser!.displayName ??
+        currentUser!.email?.split('@').first ??
+        'Student';
+
     try {
       await _qnaRef.add({
         'senderId': currentUser!.uid,
@@ -44,6 +48,22 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
         'text': text,
         'timestamp': FieldValue.serverTimestamp(),
       });
+
+      final organizerIds = <String>{
+        widget.event.createdBy,
+        ...widget.event.coHostIds,
+      }
+        ..remove(currentUser!.uid)
+        ..removeWhere((id) => id.trim().isEmpty);
+
+      final preview = text.length <= 70 ? text : '${text.substring(0, 67)}...';
+      await NotificationService.instance.addNotificationToUsers(
+        userIds: organizerIds,
+        title: 'New Q&A message in ${widget.event.name}',
+        body: '$senderName asked: "$preview"',
+        type: AppNotificationType.qna,
+        eventId: widget.event.id,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -93,7 +113,8 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
           children: [
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: _qnaRef.orderBy('timestamp', descending: true).snapshots(),
+                stream:
+                    _qnaRef.orderBy('timestamp', descending: true).snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(
@@ -107,24 +128,29 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
                       ),
                     );
                   }
-                  if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
                   final docs = snapshot.data?.docs ?? [];
-                  
+
                   if (docs.isEmpty) {
                     return Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.forum_outlined, size: 48, color: const Color(0xFF0D1B2E).withValues(alpha: 0.2)),
+                          Icon(Icons.forum_outlined,
+                              size: 48,
+                              color: const Color(0xFF0D1B2E)
+                                  .withValues(alpha: 0.2)),
                           const SizedBox(height: 12),
                           Text(
                             'No questions yet.\nBe the first to ask!',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: const Color(0xFF0D1B2E).withValues(alpha: 0.5),
+                              color: const Color(0xFF0D1B2E)
+                                  .withValues(alpha: 0.5),
                               fontSize: 16,
                             ),
                           ),
@@ -134,27 +160,33 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
                   }
 
                   return ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 20),
                     reverse: true, // Show latest messages at the bottom
                     itemCount: docs.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final data = docs[index].data() as Map<String, dynamic>;
                       final senderId = data['senderId'] as String? ?? '';
                       final isMe = senderId == currentUser?.uid;
                       final text = data['text'] as String? ?? '';
-                      final senderName = data['senderName'] as String? ?? 'User';
+                      final senderName =
+                          data['senderName'] as String? ?? 'User';
                       final timestamp = data['timestamp'] as Timestamp?;
 
                       return Align(
-                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                        alignment:
+                            isMe ? Alignment.centerRight : Alignment.centerLeft,
                         child: Container(
                           constraints: BoxConstraints(
                             maxWidth: MediaQuery.of(context).size.width * 0.75,
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
-                            color: isMe ? const Color(0xFFCB6D22) : Colors.white,
+                            color:
+                                isMe ? const Color(0xFFCB6D22) : Colors.white,
                             borderRadius: BorderRadius.only(
                               topLeft: const Radius.circular(20),
                               topRight: const Radius.circular(20),
@@ -186,7 +218,9 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
                               Text(
                                 text,
                                 style: TextStyle(
-                                  color: isMe ? Colors.white : const Color(0xFF333333),
+                                  color: isMe
+                                      ? Colors.white
+                                      : const Color(0xFF333333),
                                   fontSize: 15,
                                   height: 1.3,
                                 ),
@@ -198,8 +232,8 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
                                   _formatTimestamp(timestamp),
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: isMe 
-                                        ? Colors.white.withValues(alpha: 0.7) 
+                                    color: isMe
+                                        ? Colors.white.withValues(alpha: 0.7)
                                         : const Color(0xFF999999),
                                   ),
                                 ),
@@ -213,7 +247,7 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
                 },
               ),
             ),
-            
+
             // Bottom Input Area
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -248,7 +282,8 @@ class _StudentQnaScreenState extends State<StudentQnaScreen> {
                             fontSize: 15,
                           ),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 14),
                         ),
                       ),
                     ),
