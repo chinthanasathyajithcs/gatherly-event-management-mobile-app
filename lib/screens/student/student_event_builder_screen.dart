@@ -221,6 +221,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     final aiPosterImageUrl = _extractString(extracted['posterImageUrl']);
     final aiHasLimit = _extractBool(extracted['hasParticipantLimit']);
     final aiAttendeeCount = _extractInt(extracted['attendeeCount']);
+    final aiIsQnaEnabled = _extractBool(extracted['isQnaEnabled']);
+    final aiIsQrAttendanceEnabled = _extractBool(extracted['isQrAttendanceEnabled']);
 
     if (_tryPlannerAdvanceFromAi(
       aiCategory: aiCategory,
@@ -232,6 +234,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       aiPosterImageUrl: aiPosterImageUrl,
       aiHasLimit: aiHasLimit,
       aiAttendeeCount: aiAttendeeCount,
+      aiIsQnaEnabled: aiIsQnaEnabled,
+      aiIsQrAttendanceEnabled: aiIsQrAttendanceEnabled,
       confidence: aiResult?.confidence,
     )) {
       return;
@@ -477,6 +481,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     required String? aiPosterImageUrl,
     required bool? aiHasLimit,
     required int? aiAttendeeCount,
+    required bool? aiIsQnaEnabled,
+    required bool? aiIsQrAttendanceEnabled,
     required double? confidence,
   }) {
     var changed = false;
@@ -542,6 +548,18 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         _posterImageUrl = normalized;
         changed = true;
       }
+    }
+
+    if (!_qnaModeChosen && aiIsQnaEnabled != null) {
+      _isQnaEnabled = aiIsQnaEnabled;
+      _qnaModeChosen = true;
+      changed = true;
+    }
+
+    if (!_qrAttendanceModeChosen && aiIsQrAttendanceEnabled != null) {
+      _isQrAttendanceEnabled = aiIsQrAttendanceEnabled;
+      _qrAttendanceModeChosen = true;
+      changed = true;
     }
 
     final shouldAdvance = changed && (confidence ?? 0) >= 0.55;

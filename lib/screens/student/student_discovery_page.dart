@@ -11,7 +11,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../models/event_model.dart';
+
 import '../../widgets/event_card.dart';
+import 'qr_generator_page.dart';
 import 'student_qna_screen.dart';
 
 const Color _bgColor = Color(0xFFF6F1EB);
@@ -2298,30 +2300,64 @@ class EventDetailsPageState extends State<EventDetailsPage> {
 
                     // ── Case 1: Already registered ─────────────────
                     if (isRegistered) {
-                      return Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F5EF),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFB2DFCA)),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.check_circle_rounded,
-                                size: 18, color: Color(0xFF1A8A5A)),
-                            SizedBox(width: 8),
-                            Text(
-                              'Registered — see you there!',
-                              style: TextStyle(
-                                color: Color(0xFF1A8A5A),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5EF),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFB2DFCA)),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check_circle_rounded,
+                                    size: 18, color: Color(0xFF1A8A5A)),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Registered — see you there!',
+                                  style: TextStyle(
+                                    color: Color(0xFF1A8A5A),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (event.isQrAttendanceEnabled) ...[
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              onPressed: () {
+                                final currentUser = FirebaseAuth.instance.currentUser;
+                                final sName = currentUser?.displayName ?? 'Student';
+
+                                QRGeneratorDialog.show(
+                                  context,
+                                  uid: uid,
+                                  studentName: sName,
+                                  studentId: uid.length > 8 ? uid.substring(0, 8) : uid,
+                                  event: event,
+                                );
+                              },
+                              icon: const Icon(Icons.qr_code_2_rounded, size: 20),
+                              label: const Text(
+                                'View QR Ticket',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFCB6D22),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
                             ),
                           ],
-                        ),
+                        ],
                       );
                     }
 

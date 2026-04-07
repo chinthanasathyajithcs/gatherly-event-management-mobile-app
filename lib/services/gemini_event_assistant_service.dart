@@ -87,7 +87,9 @@ Return JSON in this exact shape:
     "hasParticipantLimit": true,
     "attendeeCount": 0,
     "description": "string|null",
-    "posterImageUrl": "string|null"
+    "posterImageUrl": "string|null",
+    "isQnaEnabled": "boolean|null",
+    "isQrAttendanceEnabled": "boolean|null"
   }
 }
 
