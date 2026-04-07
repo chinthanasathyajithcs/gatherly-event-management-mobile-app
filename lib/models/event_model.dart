@@ -46,6 +46,7 @@ class EventModel {
   final EventApprovalStatus approvalStatus;
   final String? posterImageUrl;
   final bool isQnaEnabled;
+  final bool isQrAttendanceEnabled;
   final Timestamp? createdAt;
   final Timestamp? approvalUpdatedAt;
   final int durationHours;
@@ -71,6 +72,7 @@ class EventModel {
     this.approvalStatus = EventApprovalStatus.pending,
     this.posterImageUrl,
     this.isQnaEnabled = false,
+    this.isQrAttendanceEnabled = false,
     this.createdAt,
     this.approvalUpdatedAt,
     this.durationHours = 2,
@@ -139,6 +141,7 @@ class EventModel {
           ? null
           : (map['posterImageUrl'] as String?),
       isQnaEnabled: map['isQnaEnabled'] as bool? ?? false,
+      isQrAttendanceEnabled: map['isQrAttendanceEnabled'] as bool? ?? false,
       createdAt: map['createdAt'] as Timestamp?,
       approvalUpdatedAt: map['approvalUpdatedAt'] as Timestamp?,
       durationHours: map['durationHours'] as int? ?? 2,
@@ -170,6 +173,7 @@ class EventModel {
       'status': statusValue,
       'posterImageUrl': posterImageUrl,
       'isQnaEnabled': isQnaEnabled,
+      'isQrAttendanceEnabled': isQrAttendanceEnabled,
       'createdAt': FieldValue.serverTimestamp(),
       'durationHours': durationHours,
       'clubId': clubId,

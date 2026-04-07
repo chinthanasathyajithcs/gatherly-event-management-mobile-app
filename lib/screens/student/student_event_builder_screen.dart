@@ -27,6 +27,7 @@ enum _EventBuilderStep {
   attendees,
   description,
   qnaMode,
+  qrAttendanceMode,
   review
 }
 
@@ -72,13 +73,15 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
   String? _posterImageUrl;
   bool _isQnaEnabled = false;
   bool _qnaModeChosen = false;
+  bool _isQrAttendanceEnabled = false;
+  bool _qrAttendanceModeChosen = false;
   bool _saving = false;
   bool _thinking = false;
   bool _uploadingPoster = false;
   String? _clubId;
   String? _clubName;
 
-  static const int _builderStepsCount = 10;
+  static const int _builderStepsCount = 11;
 
   @override
   void initState() {
@@ -399,16 +402,41 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         if (hasYesSignal) {
           _isQnaEnabled = true;
           _qnaModeChosen = true;
-          _step = _EventBuilderStep.review;
-          _addAssistant('Live Q&A enabled. Review the event details below and save.');
+          _step = _EventBuilderStep.qrAttendanceMode;
+          _addAssistant('Live Q&A enabled. Will this event require QR code check-in for attendance? Reply yes or no.');
           return;
         }
 
         if (hasNoSignal) {
           _isQnaEnabled = false;
           _qnaModeChosen = true;
+          _step = _EventBuilderStep.qrAttendanceMode;
+          _addAssistant('Live Q&A skipped. Will this event require QR code check-in for attendance? Reply yes or no.');
+          return;
+        }
+
+        _addAssistant('Please answer with yes or no.');
+        break;
+      case _EventBuilderStep.qrAttendanceMode:
+        final normalizedQr = input.toLowerCase();
+        final yesValuesQr = {'yes', 'y', 'enable', 'sure', 'require'};
+        final noValuesQr = {'no', 'n', 'disable', 'skip'};
+        final hasYesSignalQr = yesValuesQr.any(normalizedQr.contains);
+        final hasNoSignalQr = noValuesQr.any(normalizedQr.contains);
+
+        if (hasYesSignalQr) {
+          _isQrAttendanceEnabled = true;
+          _qrAttendanceModeChosen = true;
           _step = _EventBuilderStep.review;
-          _addAssistant('Live Q&A skipped. Review the event details below and save.');
+          _addAssistant('QR check-in enabled. Review the event details below and save.');
+          return;
+        }
+
+        if (hasNoSignalQr) {
+          _isQrAttendanceEnabled = false;
+          _qrAttendanceModeChosen = true;
+          _step = _EventBuilderStep.review;
+          _addAssistant('QR check-in skipped. Review the event details below and save.');
           return;
         }
 
@@ -435,6 +463,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       'description': _description,
       'posterImageUrl': _posterImageUrl,
       'isQnaEnabled': _isQnaEnabled,
+      'isQrAttendanceEnabled': _isQrAttendanceEnabled,
     };
   }
 
@@ -542,6 +571,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       return _EventBuilderStep.attendees;
     if (_description == null) return _EventBuilderStep.description;
     if (!_qnaModeChosen) return _EventBuilderStep.qnaMode;
+    if (!_qrAttendanceModeChosen) return _EventBuilderStep.qrAttendanceMode;
     return _EventBuilderStep.review;
   }
 
@@ -567,6 +597,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'Add a short event description or theme.';
       case _EventBuilderStep.qnaMode:
         return 'Will this event feature a live Q&A session? Reply yes or no.';
+      case _EventBuilderStep.qrAttendanceMode:
+        return 'Will this event require QR code check-in for attendance? Reply yes or no.';
       case _EventBuilderStep.review:
         return 'Review the summary and save when ready.';
     }
@@ -801,6 +833,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         description: _description!,
         posterImageUrl: _normalizePosterUrl(_posterImageUrl),
         isQnaEnabled: _isQnaEnabled,
+        isQrAttendanceEnabled: _isQrAttendanceEnabled,
         clubId: _clubId,
         clubName: _clubName,
       );
@@ -835,6 +868,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
       _posterImageUrl = null;
       _isQnaEnabled = false;
       _qnaModeChosen = false;
+      _isQrAttendanceEnabled = false;
+      _qrAttendanceModeChosen = false;
       _clubId = null;
       _clubName = null;
       _step = _EventBuilderStep.category;
@@ -1182,6 +1217,7 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
     if (!_hasParticipantLimit || _attendees != null) count++;
     if (_description != null) count++;
     if (_qnaModeChosen) count++;
+    if (_qrAttendanceModeChosen) count++;
     return count;
   }
 
@@ -1207,6 +1243,8 @@ class _StudentEventBuilderScreenState extends State<StudentEventBuilderScreen> {
         return 'Description';
       case _EventBuilderStep.qnaMode:
         return 'Live Q&A';
+      case _EventBuilderStep.qrAttendanceMode:
+        return 'QR Check-in';
       case _EventBuilderStep.review:
         return 'Review';
     }
