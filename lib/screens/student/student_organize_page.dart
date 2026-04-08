@@ -2001,6 +2001,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
 
   DateTime _date = DateTime.now();
   TimeOfDay _time = TimeOfDay.now();
+  String? _posterImageUrl;
   final TextEditingController _locationCtrl = TextEditingController();
   final TextEditingController _descriptionCtrl = TextEditingController();
   final TextEditingController _attendeesCtrl = TextEditingController();
@@ -2014,6 +2015,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
   List<UserModel> _hostSearchResults = const [];
   bool _hostSearchHasQueried = false;
   bool _searchingHosts = false;
+  bool _updatingPoster = false;
   Timer? _hostSearchDebounce;
   int _hostSearchToken = 0;
   String? _hostSearchError;
@@ -2031,6 +2033,7 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     _date = widget.event.date;
     _time = TimeOfDay(
         hour: widget.event.time.hour, minute: widget.event.time.minute);
+    _posterImageUrl = widget.event.posterImageUrl;
     _locationCtrl.text = widget.event.location;
     _descriptionCtrl.text = widget.event.description;
     _attendeesCtrl.text = widget.event.attendeeCount?.toString() ?? '';
@@ -2191,6 +2194,112 @@ class _EditEventSheetState extends State<_EditEventSheet> {
     }
   }
 
+  Future<void> _replacePoster() async {
+    if (_updatingPoster || widget.event.id == null) return;
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      _showError('Please sign in again to upload poster.');
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1800,
+      imageQuality: 85,
+    );
+    if (picked == null) {
+      _showError('No image selected from gallery.');
+      return;
+    }
+
+    setState(() => _updatingPoster = true);
+
+    try {
+      final uid = currentUser.uid;
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.')
+          ? picked.name.split('.').last.toLowerCase()
+          : 'jpg';
+      final fileName =
+          '${widget.event.id}_${DateTime.now().millisecondsSinceEpoch.toString()}.$ext';
+      final app = FirebaseAuth.instance.app;
+      final bucket = app.options.storageBucket;
+      final fallbackBucket = (bucket != null && bucket.isNotEmpty)
+          ? bucket
+          : '${app.options.projectId}.firebasestorage.app';
+      final storage = FirebaseStorage.instanceFor(bucket: fallbackBucket);
+      final ref = storage.ref().child('event_posters/$uid/$fileName');
+
+      final contentType = switch (ext) {
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'heic' => 'image/heic',
+        'heif' => 'image/heif',
+        _ => 'image/jpeg',
+      };
+
+      await ref.putData(
+        bytes,
+        SettableMetadata(contentType: contentType),
+      );
+      final downloadUrl = await ref.getDownloadURL();
+
+      await widget.eventService.updateEventPoster(
+        eventId: widget.event.id!,
+        posterImageUrl: downloadUrl,
+      );
+
+      if (!mounted) return;
+      setState(() => _posterImageUrl = downloadUrl);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Poster updated successfully.')),
+      );
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        final msg = switch (e.code) {
+          'unauthorized' =>
+            'Upload blocked by Firebase Storage rules. Allow authenticated users for event_posters/{uid}.',
+          'object-not-found' =>
+            'Storage bucket not found. Create Firebase Storage for this project.',
+          _ => 'Poster upload failed: ${e.message ?? e.code}',
+        };
+        _showError(msg);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Poster upload failed: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _updatingPoster = false);
+    }
+  }
+
+  Future<void> _removePoster() async {
+    if (_updatingPoster || widget.event.id == null) return;
+
+    setState(() => _updatingPoster = true);
+
+    try {
+      await widget.eventService.updateEventPoster(
+        eventId: widget.event.id!,
+        posterImageUrl: null,
+      );
+      if (!mounted) return;
+      setState(() => _posterImageUrl = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Poster removed.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        _showError('Poster removal failed: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _updatingPoster = false);
+    }
+  }
+
   Future<void> _save({bool resubmit = false}) async {
     if (_saving) return;
 
@@ -2261,6 +2370,33 @@ class _EditEventSheetState extends State<_EditEventSheet> {
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg)),
+    );
+  }
+
+  Widget _buildPosterPlaceholder() {
+    return Container(
+      color: const Color(0xFFF3F5F7),
+      alignment: Alignment.center,
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_outlined,
+            size: 34,
+            color: Color(0xFF9AA8B6),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No banner preview available',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF7E8B99),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2368,6 +2504,135 @@ class _EditEventSheetState extends State<_EditEventSheet> {
               ),
             ),
             const SizedBox(height: 20),
+
+            // Poster / banner editor
+            _sectionLabel('Poster / Banner'),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0x120D1B2E)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: _posterImageUrl != null &&
+                              _posterImageUrl!.trim().isNotEmpty
+                          ? Image.network(
+                              _posterImageUrl!,
+                              fit: BoxFit.cover,
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  color: const Color(0xFFF3F5F7),
+                                  alignment: Alignment.center,
+                                  child: const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (_, __, ___) =>
+                                  _buildPosterPlaceholder(),
+                            )
+                          : _buildPosterPlaceholder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _posterImageUrl != null &&
+                            _posterImageUrl!.trim().isNotEmpty
+                        ? 'Current banner preview'
+                        : 'No banner image set yet',
+                    style: const TextStyle(
+                      color: Color(0xFF1F334A),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Replace the banner or remove it from this event.',
+                    style: TextStyle(
+                      color: Color(0xFF6A7C90),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF0D1B2E),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            onPressed: _updatingPoster ? null : _replacePoster,
+                            icon: _updatingPoster
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.swap_horiz_rounded,
+                                    size: 19),
+                            label: const Text(
+                              'Replace',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFD64545),
+                              side: const BorderSide(color: Color(0x30D64545)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            onPressed: (_updatingPoster ||
+                                    _posterImageUrl == null ||
+                                    _posterImageUrl!.trim().isEmpty)
+                                ? null
+                                : _removePoster,
+                            icon: const Icon(Icons.delete_outline, size: 19),
+                            label: const Text(
+                              'Remove',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
 
             // Locked fields display
             _LockedFieldDisplay(

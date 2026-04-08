@@ -1,4 +1,4 @@
-# Event Management App
+# Gatherly
 
 ## Developer Setup Instructions
 

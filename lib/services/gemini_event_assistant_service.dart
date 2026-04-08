@@ -44,7 +44,7 @@ class GeminiEventAssistantService {
     final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey);
 
     final prompt = '''
-You are an AI assistant for a University Event Management app.
+You are an AI assistant for Gatherly.
 Your job:
 1) Classify user intent.
 2) Extract event fields if user is creating/updating an event.
